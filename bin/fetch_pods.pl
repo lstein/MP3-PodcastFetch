@@ -25,6 +25,9 @@ my $cfg = Config::IniFiles->new(-file=>CONFIG,-default=>'Globals')
 $pid_file = $cfg->val(Globals=>'pidfile');
 write_pidfile($pid_file) or exit 0;
 
+chomp(my $date = `date`);
+print "START fetch_pods: $date\n";
+
 my $verbose      = $cfg->val(Globals=>'verbose');
 my $base         = $cfg->val(Globals=>'base');
 my $timeout      = $cfg->val(Globals=>'timeout');
@@ -63,7 +66,7 @@ for my $podcast (@sections) {
   $deleted += $feed->deleted;
 }
 
-warn "$fetched fetched, $skipped skipped, $deleted deleted.\n";
+print "$fetched fetched, $skipped skipped, $deleted deleted.\n\n";
 
 exit 0;
 
