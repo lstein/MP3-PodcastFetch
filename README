@@ -1,0 +1,2 @@
+These are scripts and perl libraries to fetch podcasts under cron.
+See conf/podcasts.conf for configuration details. Binary is in bin/fetch_podcasts.pl
