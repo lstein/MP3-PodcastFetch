@@ -13,7 +13,7 @@ use constant CONFIG => "$Bin/../conf/podcasts.conf";
 
 ################## clean up nicely ##############
 my $pid_file;
-$SIG{TERM} = $SIG{INT} = sub { unlink $pid_file if defined $pid_file; die "killed"; };
+$SIG{TERM} = $SIG{INT} = sub { unlink $pid_file if defined $pid_file; exit -1; };
 END {
   unlink $pid_file if defined $pid_file;
 }
@@ -25,27 +25,38 @@ my $cfg = Config::IniFiles->new(-file=>CONFIG,-default=>'Globals')
 $pid_file = $cfg->val(Globals=>'pidfile');
 write_pidfile($pid_file) or exit 0;
 
-my $verbose  = $cfg->val(Globals=>'verbose');
-my $base     = $cfg->val(Globals=>'base');
-my $timeout  = $cfg->val(Globals=>'timeout');
-my @sections = grep {!/globals/i} $cfg->Sections;
+my $verbose      = $cfg->val(Globals=>'verbose');
+my $base         = $cfg->val(Globals=>'base');
+my $timeout      = $cfg->val(Globals=>'timeout');
+my $global_limit = $cfg->val(Globals=>'limit');
+my $global_mode  = $cfg->val(Globals=>'mirror_mode');
+my $subdirs      = $cfg->val(Globals=>'subdirs');
+my @sections     = grep {!/globals/i} $cfg->Sections;
 
 my ($fetched,$skipped,$deleted) = (0,0,0);
 for my $podcast (@sections) {
   my $url    = $cfg->val($podcast=>'url');
   my $limit  = $cfg->val($podcast=>'limit');
   my $subdir = $cfg->val($podcast=>'subdir');
-  my $dir    = $subdir ? "$base/$subdir" : $base;
+  my $dir    = $subdirs && $subdir ? "$base/$subdir" : $base;
+  my $mode   = $global_mode || $cfg->val($podcast=>'mirror_mode');
 
   unless (defined $url) {
     warn "No podcast RSS URL defined for $podcast\n";
     next;
   }
 
-  my $feed   = PodcastFetch->new(-base    => $dir,
-				 -rss     => $url,
-				 -max     => $limit,
-				 -verbose => $verbose);
+  if ($limit eq 'none') {
+      undef $limit;
+  } elsif (!defined $limit) {
+      $limit = $global_limit;
+  }
+
+  my $feed   = PodcastFetch->new(-base        => $dir,
+				 -rss         => $url,
+				 -max         => $limit,
+				 -mirror_mode => $mode,
+				 -verbose     => $verbose);
   $feed->fetch_pods;
   $fetched += $feed->fetched;
   $skipped += $feed->skipped;

@@ -15,6 +15,7 @@ use IO::Dir;
 # -rss       => url of the RSS feed to read
 # -max       => maximum number of episodes to keep
 # -timeout   => timeout for URL requests
+# -mirror_mode => 'modified-since' (careful) or 'exists' (careless)
 # -verbose   => print status reports
 
 sub new {
@@ -25,6 +26,7 @@ sub new {
   $self->rss($args{-rss}         || croak 'please provide -rss argument');
   $self->max($args{-max}               );
   $self->timeout($args{-timeout} || 30 );
+  $self->mirror_mode($args{-mirror_mode} || 'exists');
   $self->verbose($args{-verbose}       );
   $self;
 }
@@ -54,6 +56,13 @@ sub timeout {
   my $self = shift;
   my $d    = $self->{timeout};
   $self->{timeout} = shift if @_;
+  $d;
+}
+
+sub mirror_mode {
+  my $self = shift;
+  my $d    = $self->{mirror_mode};
+  $self->{mirror_mode} = shift if @_;
   $d;
 }
 
@@ -144,6 +153,17 @@ sub mirror {
 sub mirror_url {
   my $self = shift;
   my ($ua,$url,$filename,$title) = @_;
+
+  my $mode = $self->mirror_mode;
+  croak "invalid mirror mode $mode" unless $mode eq 'exists' or $mode eq 'modified-since';
+
+  # work around buggy servers that don't respect if-modified-since
+  if ($mode eq 'exists' && -e $filename) {
+      $self->log("$title: skipped");
+      $self->bump_skipped;
+      return;
+  }
+
   my $response = $ua->mirror($url,$filename);
   if ($response->is_error) {
     warn "$url: ",$response->status_line;
@@ -164,6 +184,7 @@ sub log {
   my @msg  = @_;
   return unless $self->verbose;
   my $tabs = $self->{tabs} || 0;
+  foreach (@msg) { $_ ||= '' } # get rid of uninit variables
   chomp @msg;
   warn "\t"x$tabs,@msg,"\n";
 }
