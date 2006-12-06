@@ -205,6 +205,7 @@ sub rewrite_tags {
   my $self = shift;
   my ($filename,$title) = @_;
   my $mtime = (stat($filename))[9];
+  my $year  = (localtime($mtime))[5]+1900;
 
   eval {
     my $mp3   = Audio::TagLib::FileRef->new($filename);
@@ -212,6 +213,7 @@ sub rewrite_tags {
     my $tag   = $mp3->tag;
     $tag->setGenre(Audio::TagLib::String->new('Podcast'));
     $tag->setTitle(Audio::TagLib::String->new($title));
+    $tag->setYear($year);
     $mp3->save;
   };
   croak $@ if $@;
