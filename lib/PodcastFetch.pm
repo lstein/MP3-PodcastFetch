@@ -9,7 +9,7 @@ use Carp 'croak';
 use File::Basename 'basename';
 use File::Path 'mkpath';
 use IO::Dir;
-use MP3::Tag;
+use Audio::TagLib::FileRef;
 
 # arguments:
 # -base      => base directory for podcasts, e.g. /var/podcasts
@@ -206,23 +206,13 @@ sub rewrite_tags {
   my ($filename,$title) = @_;
   my $mtime = (stat($filename))[9];
 
-  # All this manipulation of filehandles is just to get MP3::Tag to stop
-  # emitting errors (to stderr and stdout!) when it encounters a tag it
-  # doesn't understand.
   eval {
-      open OLDOUT,     ">&", \*STDOUT or die "Can't dup STDOUT: $!";
-      open OLDERR,     ">&", \*STDERR or die "Can't dup STDERR: $!";
-      open STDOUT, ">","/dev/null";
-      open STDERR, ">","/dev/null";
-      MP3::Tag->config(autoinfo=>'ID3v2','ID3v1');
-      my $mp3  = MP3::Tag->new($filename) or die "MP3::Tag->new: $!";
-      my $data = $mp3->autoinfo;
-      $data->{title} = $title;
-      $data->{genre} = 'Podcast';
-      $mp3->update_tags($data,1);
-      $mp3->close;
-      open STDOUT, ">&",\*OLDOUT;
-      open STDERR, ">&",\*OLDERR;
+    my $mp3   = Audio::TagLib::FileRef->new($filename);
+    defined $mp3 or die "Audio::TabLib::FileRef->new: $!";
+    my $tag   = $mp3->tag;
+    $tag->setGenre(Audio::TagLib::String->new('Podcast'));
+    $tag->setTitle(Audio::TagLib::String->new($title));
+    $mp3->save;
   };
   croak $@ if $@;
 
