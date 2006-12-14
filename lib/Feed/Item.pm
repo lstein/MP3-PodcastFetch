@@ -16,7 +16,7 @@ struct (
 	);
 
 sub timestamp {
-  my $date = shift->pubDate or return;
+  my $date = shift->pubDate or return 0;
   str2time($date);
 }
 

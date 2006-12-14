@@ -210,6 +210,9 @@ sub rewrite_tags {
   eval {
     my $mp3   = Audio::TagLib::FileRef->new($filename);
     defined $mp3 or die "Audio::TabLib::FileRef->new: $!";
+    $mp3->save;    # this seems to upgrade the tag to v2.4
+    undef $mp3;
+    $mp3   = Audio::TagLib::FileRef->new($filename);
     my $tag   = $mp3->tag;
     $tag->setGenre(Audio::TagLib::String->new('Podcast'));
     $tag->setTitle(Audio::TagLib::String->new($title));
