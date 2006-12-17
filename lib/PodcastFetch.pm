@@ -17,7 +17,8 @@ use Audio::TagLib::FileRef;
 # -max       => maximum number of episodes to keep
 # -timeout   => timeout for URL requests
 # -mirror_mode      => 'modified-since' (careful) or 'exists' (careless)
-# -rewrite_filename => rewrite file name and ID3 tag with podcast title
+# -rewrite_filename => rewrite file name with podcast title
+# -upgrade_tag     => upgrade tags to v2.4
 # -verbose   => print status reports
 
 sub new {
@@ -31,6 +32,7 @@ sub new {
   $self->mirror_mode($args{-mirror_mode} || 'exists');
   $self->verbose($args{-verbose}       );
   $self->rewrite_filename($args{-rewrite_filename}       );
+  $self->upgrade_tags($args{-upgrade_tag}       );
   $self;
 }
 
@@ -76,6 +78,13 @@ sub rewrite_filename {
   $d;
 }
 
+sub upgrade_tags {
+  my $self = shift;
+  my $d    = $self->{upgrade_tags};
+  $self->{upgrade_tags} = shift if @_;
+  $d;
+}
+
 sub verbose {
   my $self = shift;
   my $d    = $self->{verbose};
@@ -84,10 +93,12 @@ sub verbose {
 }
 
 sub fetched { shift->{stats}{fetched} ||= 0 }
+sub errors  { shift->{stats}{error}   ||= 0 }
 sub deleted { shift->{stats}{deleted} ||= 0 }
 sub skipped { shift->{stats}{skipped} ||= 0 }
 
 sub bump_fetched {shift->{stats}{fetched} += (@_ ? shift : 1)}
+sub bump_error  {shift->{stats}{error} += (@_ ? shift : 1)}
 sub bump_deleted {shift->{stats}{deleted} += (@_ ? shift : 1)}
 sub bump_skipped {shift->{stats}{skipped} += (@_ ? shift : 1)}
 
@@ -177,18 +188,36 @@ sub mirror_url {
 
   my $response = $ua->mirror($url,$filename);
   if ($response->is_error) {
-    warn "$url: ",$response->status_line;
-    return;
+      warn "$url: ",$response->status_line;
+      $self->bump_error;
+      return;
+  }
+
+  if ($response->code eq RC_NOT_MODIFIED) {
+      $self->bump_skipped;
+      $self->log("$title: skipped");
+      return;
   }
 
   if ($response->code eq RC_OK) {
-    $self->rewrite_tags($filename,$title) if $self->rewrite_filename;
-    $self->bump_fetched;
-    $self->log("$title: ",-s $filename," bytes fetched");
-  } elsif ($response->code eq RC_NOT_MODIFIED) {
-    $self->bump_skipped;
-    $self->log("$title: skipped");
+      my $length = $response->header('Content-Length');
+      my $size   = -s $filename;
+      
+      if (defined $length && $size < $length) {
+	  $self->log("$title: ","INCOMPLETE. $size/$length bytes fetched (will retry later)");
+	  unlink $filename;
+	  $self->bump_error;
+      } else {
+	  $self->fix_tags($filename,$title)  if $self->upgrade_tags;
+	  $self->bump_fetched;
+	  $self->log("$title: $size bytes fetched");
+      }
+      return;
   }
+
+  $self->log("$title: unrecognized response code ",$response->code);
+  $self->bump_error;
+  
 }
 
 sub log {
@@ -201,7 +230,7 @@ sub log {
   warn "\t"x$tabs,@msg,"\n";
 }
 
-sub rewrite_tags {
+sub fix_tags {
   my $self = shift;
   my ($filename,$title) = @_;
   my $mtime = (stat($filename))[9];

@@ -35,12 +35,13 @@ my $base         = $cfg->val(Globals=>'base');
 my $subdirs      = $cfg->val(Globals=>'subdirs');
 my @sections     = grep {!/globals/i} $cfg->Sections;
 
-my ($fetched,$skipped,$deleted) = (0,0,0);
+my ($fetched,$skipped,$deleted,$errors) = (0,0,0,0);
 for my $podcast (@sections) {
   my $url               = $cfg->val($podcast=>'url');
   my $limit             = $cfg->val($podcast=>'limit');
   my $subdir            = $cfg->val($podcast=>'subdir');
-  my $rewrite           = $cfg->val($podcast=>'rewrite_filenames');
+  my $rewrite           = $cfg->val($podcast=>'rewrite_filename');
+  my $upgrade           = $cfg->val($podcast=>'upgrade_tag');
   my $mode              = $cfg->val($podcast=>'mirror_mode');
   my $timeout           = $cfg->val($podcast=>'timeout');
 
@@ -57,14 +58,16 @@ for my $podcast (@sections) {
 				 -max         => $limit,
 				 -mirror_mode      => $mode,
 				 -rewrite_filename => $rewrite,
+				 -upgrade_tag      => $upgrade,
 				 -verbose          => $verbose);
   $feed->fetch_pods;
   $fetched += $feed->fetched;
   $skipped += $feed->skipped;
   $deleted += $feed->deleted;
+  $errors  += $feed->errors;
 }
 
-print "$fetched fetched, $skipped skipped, $deleted deleted.\n\n";
+print "$fetched fetched, $skipped skipped, $deleted deleted, $errors errors.\n\n";
 
 exit 0;
 
