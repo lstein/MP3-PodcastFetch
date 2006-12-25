@@ -1,4 +1,28 @@
-#!/usr/bin/perl -w
+#!perl
+use Config;
+use File::Basename qw(&basename &dirname);
+use File::Spec;
+use FindBin '$Bin';
+use Cwd;
+
+my $dir = dirname($0);
+$file   = shift || File::Spec->catfile($dir,basename($0, '.PL','.PLS'));
+
+open OUT,">$file" or die "Can't create $file: $!";
+
+print "Extracting $file (with variable substitutions)\n";
+
+my $startperl = $Config{startperl} ne '#!perl' 
+  ? $Config{startperl}
+  : "#!$Config{perlpath}";
+
+print OUT <<"!GROK!THIS!";
+$startperl -w
+!GROK!THIS!
+
+# In the following, perl variables are not expanded during extraction.
+
+print OUT <<'!NO!SUBS!';
 # this is the script that runs under cron
 use strict;
 use warnings;
@@ -6,7 +30,7 @@ use FindBin '$Bin';
 use Config::IniFiles;
 
 use lib "$Bin/../lib";
-use PodcastFetch;
+use MP3::PodcastFetch;
 
 use constant CONFIG => "$Bin/../conf/podcasts.conf";
 
@@ -34,13 +58,12 @@ my $base         = $cfg->val(Globals=>'base');
 my $subdirs      = $cfg->val(Globals=>'subdirs');
 my @sections     = grep {!/globals/i} $cfg->Sections;
 
-my ($fetched,$skipped,$deleted,$errors) = (0,0,0,0);
+my ($fetched,$skipped,$deleted) = (0,0,0);
 for my $podcast (@sections) {
   my $url               = $cfg->val($podcast=>'url');
   my $limit             = $cfg->val($podcast=>'limit');
   my $subdir            = $cfg->val($podcast=>'subdir');
-  my $rewrite           = $cfg->val($podcast=>'rewrite_filename');
-  my $upgrade           = $cfg->val($podcast=>'upgrade_tag');
+  my $rewrite           = $cfg->val($podcast=>'rewrite_filenames');
   my $mode              = $cfg->val($podcast=>'mirror_mode');
   my $timeout           = $cfg->val($podcast=>'timeout');
 
@@ -57,16 +80,14 @@ for my $podcast (@sections) {
 				 -max         => $limit,
 				 -mirror_mode      => $mode,
 				 -rewrite_filename => $rewrite,
-				 -upgrade_tag      => $upgrade,
 				 -verbose          => $verbose);
   $feed->fetch_pods;
   $fetched += $feed->fetched;
   $skipped += $feed->skipped;
   $deleted += $feed->deleted;
-  $errors  += $feed->errors;
 }
 
-print "$fetched fetched, $skipped skipped, $deleted deleted, $errors errors.\n\n";
+print "$fetched fetched, $skipped skipped, $deleted deleted.\n\n";
 
 exit 0;
 
@@ -86,3 +107,7 @@ sub write_pidfile {
   1;
 }
 
+!NO!SUBS!
+close OUT or die "Can't close $file: $!";
+chmod 0755, $file or die "Can't reset permissions for $file: $!\n";
+exec("$Config{'eunicefix'} $file") if $Config{'eunicefix'} ne ':';

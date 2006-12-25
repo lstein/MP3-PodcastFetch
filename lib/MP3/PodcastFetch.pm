@@ -11,6 +11,8 @@ use File::Path 'mkpath';
 use IO::Dir;
 use Audio::TagLib::FileRef;
 
+our $VERSION = '1.00';
+
 # arguments:
 # -base      => base directory for podcasts, e.g. /var/podcasts
 # -rss       => url of the RSS feed to read
