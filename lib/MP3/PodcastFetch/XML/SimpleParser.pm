@@ -56,6 +56,7 @@ tag.  It should not be called by application code.
 sub tag_starts {
   my $self = shift;
   my ($tag,$attrs) = @_;
+  $tag =~ s/[^\w]/_/g;
   my $method = "t_$tag";
   $self->{char_data} = '';  # clear char data
   $self->can($method)
@@ -74,6 +75,7 @@ tag.  It should not be called by application code.
 sub tag_stops {
   my $self = shift;
   my $tag = shift;
+  $tag =~ s/[^\w]/_/g;
   my $method = "t_$tag";
   $self->can($method)
     ? $self->$method()

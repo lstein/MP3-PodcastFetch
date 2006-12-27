@@ -129,6 +129,8 @@ sub t_author {
   }
 }
 
+*t_itunes_author = \&t_author;
+
 sub t_enclosure {
   my $self = shift;
   my $attrs = shift;
