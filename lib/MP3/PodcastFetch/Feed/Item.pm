@@ -13,6 +13,7 @@ struct (
 	author      => '$',
 	link        => '$',
 	url         => '$',
+        duration    => '$',
 	);
 
 sub timestamp {

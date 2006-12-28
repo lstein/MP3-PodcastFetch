@@ -131,6 +131,19 @@ sub t_author {
 
 *t_itunes_author = \&t_author;
 
+sub t_itunes_duration {
+  my $self = shift;
+  my $attrs = shift;
+  unless ($attrs) {
+    my $item = $self->{current}[-1] or return;
+    my @time = split ':',$self->char_data;
+    my $secs = pop @time || 0;
+    my $mins = pop @time || 0;
+    my $hrs  = pop @time || 0;
+    $item->duration($hrs*60*60+$mins*60+$secs);
+  }
+}
+
 sub t_enclosure {
   my $self = shift;
   my $attrs = shift;

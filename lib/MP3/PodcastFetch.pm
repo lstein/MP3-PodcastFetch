@@ -2,14 +2,38 @@ package MP3::PodcastFetch;
 
 use strict;
 use warnings;
-use Feed;
+use Carp 'croak';
+use MP3::PodcastFetch::Feed;
+use MP3::PodcastFetch::TagManager;
+
 use LWP::UserAgent;
 use HTTP::Status;
-use Time::ParseDate;
-use Carp 'croak';
+
+use File::Spec;
 use File::Basename 'basename';
 use File::Path 'mkpath';
 use IO::Dir;
+
+use Time::ParseDate;
+
+our $VERSION = '1.00';
+
+BEGIN {
+  my @accessors = qw(base rss max timeout mirror_mode verbose rewrite_filename upgrade_tags
+		     keep_old playlist_handle playlist_base force_genre force_artist
+		     force_album);
+  for my $accessor (@accessors) {
+eval <<END;
+sub $accessor {
+    my \$self = shift;
+    my \$d    = \$self->{$accessor};
+    \$self->{$accessor} = shift if \@_;
+    return \$d;
+}
+END
+  die $@ if $@;
+  }
+}
 
 # arguments:
 # -base             => base directory for podcasts, e.g. /var/podcasts
@@ -19,7 +43,10 @@ use IO::Dir;
 # -mirror_mode      => 'modified-since' (careful) or 'exists' (careless)
 # -rewrite_filename => rewrite file name with podcast title
 # -upgrade_tag      => upgrade tags to v2.4
-# -force_genre      => force/change the genre
+# -force_{genre,artist,album}      => force set the genre, artist and/or album
+# -keep_old         => keep old podcasts that are no longer in the RSS
+# -playlist_handle  => file handle for playlist
+# -playlist_base    => file system base to use for the playlists
 # -verbose          => print status reports
 
 sub new {
@@ -34,88 +61,14 @@ sub new {
   $self->verbose($args{-verbose}                     );
   $self->rewrite_filename($args{-rewrite_filename}   );
   $self->upgrade_tags($args{-upgrade_tag}            );
+  $self->keep_old($args{-keep_old}                   );
+  $self->playlist_handle($args{-playlist_handle}     );
+  $self->playlist_base($args{-playlist_base}         );
   $self->force_genre($args{-force_genre}             );
   $self->force_artist($args{-force_artist}           );
   $self->force_album($args{-force_artist}            );
   $self->{tabs} = 1;
   $self;
-}
-
-sub base {
-  my $self = shift;
-  my $d    = $self->{base};
-  $self->{base} = shift if @_;
-  $d;
-}
-
-sub rss {
-  my $self = shift;
-  my $d    = $self->{rss};
-  $self->{rss} = shift if @_;
-  $d;
-}
-
-sub max {
-  my $self = shift;
-  my $d    = $self->{max};
-  $self->{max} = shift if @_;
-  $d;
-}
-
-sub timeout {
-  my $self = shift;
-  my $d    = $self->{timeout};
-  $self->{timeout} = shift if @_;
-  $d;
-}
-
-sub mirror_mode {
-  my $self = shift;
-  my $d    = $self->{mirror_mode};
-  $self->{mirror_mode} = shift if @_;
-  $d;
-}
-
-sub rewrite_filename {
-  my $self = shift;
-  my $d    = $self->{rewrite_filename};
-  $self->{rewrite_filename} = shift if @_;
-  $d;
-}
-
-sub upgrade_tags {
-  my $self = shift;
-  my $d    = $self->{upgrade_tags};
-  $self->{upgrade_tags} = shift if @_;
-  $d;
-}
-
-sub force_genre {
-  my $self = shift;
-  my $d    = $self->{force_genre};
-  $self->{force_genre} = shift if @_;
-  $d;
-}
-
-sub force_artist {
-  my $self = shift;
-  my $d    = $self->{force_artist};
-  $self->{force_artist} = shift if @_;
-  $d;
-}
-
-sub force_album {
-  my $self = shift;
-  my $d    = $self->{force_album};
-  $self->{force_album} = shift if @_;
-  $d;
-}
-
-sub verbose {
-  my $self = shift;
-  my $d    = $self->{verbose};
-  $self->{verbose} = shift if @_;
-  $d;
 }
 
 sub fetched { shift->{stats}{fetched} ||= 0 }
@@ -131,7 +84,7 @@ sub bump_skipped {shift->{stats}{skipped} += (@_ ? shift : 1)}
 sub fetch_pods {
   my $self = shift;
   my $url  = $self->rss or croak 'No URL!';
-  my $parser = Feed->new($url) or croak "Couldn't create parser";
+  my $parser = MP3::PodcastFetch::Feed->new($url) or croak "Couldn't create parser";
   $parser->timeout($self->timeout);
   my @channels = $parser->read_feed;
   $self->log("Couldn't read RSS for $url: ",$parser->errstr) unless @channels;
@@ -183,11 +136,13 @@ sub mirror {
     $to_fetch{$basename}{item}    = $i;
   }
 
-  # remove any files that are no longer on %to_fetch
-  my @goners = grep {!$to_fetch{$_}} keys %current_files;
-  my $gone   = unlink @goners;
-  $self->bump_deleted($gone);
-  $self->log("$_: deleted") foreach @goners;
+  unless ($self->keep_old) {
+    # remove any files that are no longer on %to_fetch
+    my @goners = grep {!$to_fetch{$_}} keys %current_files;
+    my $gone   = unlink @goners;
+    $self->bump_deleted($gone);
+    $self->log("$_: deleted") foreach @goners;
+  }
 
   # use LWP to mirror the remainder
   my $ua = LWP::UserAgent->new;
@@ -235,7 +190,8 @@ sub mirror_url {
 	  unlink $filename;
 	  $self->bump_error;
       } else {
-	  $self->fix_tags($filename,$item,$channel)  if $self->upgrade_tags;
+	  $self->fix_tags($filename,$item,$channel);
+	  $self->write_playlist($filename,$item,$channel);
 	  $self->bump_fetched;
 	  $self->log("$title: $size bytes fetched");
       }
@@ -265,6 +221,31 @@ sub log_error {
   warn "\t"x$tabs,"*ERROR* ",@msg,"\n";
 }
 
+sub write_playlist {
+  my $self = shift;
+  my ($filename,$item,$channel) = @_;
+  my $playlist = $self->playlist_handle or return;
+  my $title    = $item->title;
+  my $album    = $channel->title;
+  my $duration = $self->get_duration($filename,$item);
+  my $base     = $self->playlist_base || $self->base;
+  my $dir      = $self->channel_dir($channel);
+
+  # This is dodgy. We may be writing the podcast files onto a Unix mounted SD card
+  # and reading it on a Windows-based MP3 player. We try to guess whether the base
+  # is a Unix or a Windows base. We assume that OSX will work OK.
+  my $path;
+  if ($base =~ m!^[A-Z]:\\! or $base =~ m!\\!) {  # Windows style path
+    eval { require File::Spec::Win32 } unless File::Spec::Win32->can('catfile');
+    $path       = File::Spec::Win32->catfile($base,$dir,$filename);
+  } else {                                        # Unix style path
+    eval { require File::Spec::Unix } unless File::Spec::Unix->can('catfile');
+    $path       = File::Spec::Unix->catfile($base,$dir,$filename);
+  }
+  print $playlist "#EXTINF:$duration,$album: $title\r\n";
+  print $playlist $path,"\r\n";
+}
+
 sub fix_tags {
   my $self = shift;
   my ($filename,$item,$channel) = @_;
@@ -282,87 +263,29 @@ sub fix_tags {
   my $genre   = $self->force_genre  || 'Podcast';
 
   eval {
-    $self->{tag_fixer} ||= $self->load_tag_fixer_code or die "Couldn't load appropriate tagging library: $@";
-    $self->{tag_fixer}->($filename,
-			 {title  => $item->title,
-			  genre  => $genre,
-			  year   => $year,
-			  artist => $artist,
-			  album  => $album,
-			  comment=> $comment,
-			  }
-			);
+    MP3::PodcastFetch::TagManager->new()->fix_tags($filename,
+						   {title  => $item->title,
+						    genre  => $genre,
+						    year   => $year,
+						    artist => $artist,
+						    album  => $album,
+						    comment=> $comment,
+						   },
+						   $self->upgrade_tags,
+						  );
   };
 
   $self->log_error($@) if $@;
   utime $mtime,$mtime,$filename;  # put the mtime back the way it was
 }
 
-sub load_tag_fixer_code {
-  my $self = shift;
-  my $upgrade_type = $self->upgrade_tags;
-  return $self->load_mp3_tag_lib   if lc $upgrade_type eq 'id3v1' or lc $upgrade_type eq 'id3v2.3';
-  return $self->load_audio_tag_lib if lc $upgrade_type eq 'id3v2.4';
-  return $self->load_audio_tag_lib || $self->load_mp3_tag_lib if lc $upgrade_type eq 'auto';
-  return;
-}
+sub get_duration {
+  my $self     = shift;
+  my ($filename,$item) = @_;
 
-sub load_mp3_tag_lib {
-  my $self   = shift;
-  my $loaded = eval {require MP3::Tag; 1; };
-  return unless $loaded;
-  return lc $self->upgrade_tags eq 'id3v1' ? \&upgrade_to_ID3v1 : \&upgrade_to_ID3v23;
-}
-
-sub load_audio_tag_lib {
-  my $self = shift;
-  my $loaded = eval {require Audio::TagLib; 1; };
-  return unless $loaded;
-  return \&upgrade_to_ID3v24;
-}
-
-sub upgrade_to_ID3v24 {
-  my ($filename,$tags) = @_;
-  my $mp3   = Audio::TagLib::FileRef->new($filename);
-  defined $mp3 or die "Audio::TabLib::FileRef->new: $!";
-  $mp3->save;    # this seems to upgrade the tag to v2.4
-  undef $mp3;
-  $mp3   = Audio::TagLib::FileRef->new($filename);
-  my $tag   = $mp3->tag;
-  $tag->setGenre(Audio::TagLib::String->new($tags->{genre}))     if defined $tags->{genre};
-  $tag->setTitle(Audio::TagLib::String->new($tags->{title}))     if defined $tags->{title};
-  $tag->setAlbum(Audio::TagLib::String->new($tags->{album}))     if defined $tags->{album};
-  $tag->setArtist(Audio::TagLib::String->new($tags->{artist}))   if defined $tags->{artist};
-  $tag->setComment(Audio::TagLib::String->new($tags->{comment})) if defined $tags->{comment};
-  $tag->setYear($tags->{year})                                   if defined $tags->{year};
-  $mp3->save;
-}
-
-sub upgrade_to_ID3v1 {
-  my ($filename,$tags,) = @_;
-  upgrade_to_ID3v1_or_23($filename,$tags,0);
-}
-
-sub upgrade_to_ID3v23 {
-  my ($filename,$tags,) = @_;
-  upgrade_to_ID3v1_or_23($filename,$tags,1);
-}
-
-sub upgrade_to_ID3v1_or_23 {
-  my ($filename,$tags,$v2) = @_;
-  # quench warnings from MP3::Tag
-  open OLDOUT,     ">&", \*STDOUT or die "Can't dup STDOUT: $!";
-  open OLDERR,     ">&", \*STDERR or die "Can't dup STDERR: $!";
-  open STDOUT, ">","/dev/null";
-  open STDERR, ">","/dev/null";
-  MP3::Tag->config(autoinfo=> $v2 ? ('ID3v1','ID3v1') : ('ID3v2','ID3v1'));
-  my $mp3   = MP3::Tag->new($filename) or die "MP3::Tag->new($filename): $!";
-  my $data = $mp3->autoinfo;
-  do { $data->{$_} = $tags->{$_} if defined $tags->{$_} } foreach qw(genre title album artist comment year);
-  $mp3->update_tags($data,$v2);
-  $mp3->close;
-  open STDOUT, ">&",\*OLDOUT;
-  open STDERR, ">&",\*OLDERR;
+  my $duration =  MP3::PodcastFetch::TagManager->new()->get_duration($filename);
+  $duration    = $item->duration || 0 unless defined $duration;
+  return $duration;
 }
 
 sub make_filename {
@@ -380,8 +303,7 @@ sub make_filename {
 sub generate_directory {
   my $self    = shift;
   my $channel = shift;
-  my $title   = $self->safestr($channel->title); # potential bug here -- what if two podcasts have same title?
-  my $dir     = $self->base . "/$title";
+  my $dir     = File::Spec->catfile($self->base,$self->channel_dir($channel));
 
   # create the thing
   unless (-d $dir) {
@@ -389,8 +311,13 @@ sub generate_directory {
   }
 
   -w $dir or croak "Can't write to directory $dir";
-
   return $dir;
+}
+
+sub channel_dir {
+  my $self    = shift;
+  my $channel = shift;
+  return $self->safestr($channel->title); # potential bug here -- what if two podcasts have same title?
 }
 
 sub safestr {
