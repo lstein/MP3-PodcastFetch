@@ -71,16 +71,19 @@ my $cfg = Config::IniFiles->new(-file=>$config_file,-default=>'Globals')
 $pid_file = $cfg->val(Globals=>'pidfile') || '/tmp/fetchPods.pid';
 write_pidfile($pid_file) or exit 0;
 
+my $base  = interpolate($cfg->val(Globals=>'base'));
+$base or die "Please provide a valid 'base' option in the [Globals] section of the configuration file.\n";
+$base = interpolate($base);
+
 my $date = localtime;
 print "$date START fetch_pods\n";
 STDOUT->flush;
 
 my $verbose           = $cfg->val(Globals=>'verbose');
-my $base              = $cfg->val(Globals=>'base');
 my $subdirs           = $cfg->val(Globals=>'subdirs')       || 0;
 my $generate_playlist = $cfg->val(Globals=>'keep_old')      || 0;
-my $playlist_base     = $cfg->val(Globals=>'playlist_base') || $base;
-my $playlist_name     = $cfg->val(Globals=>'playlist_name') || '%Y-%m-%d-%H:%S-podcasts.m3u';
+my $playlist_base     = interpolate($cfg->val(Globals=>'playlist_base')) || $base;
+my $playlist_name     = $cfg->val(Globals=>'playlist_name') || '%Y-%m-%d_podcasts.m3u';
 my @sections          = grep {!/globals/i} $cfg->Sections;
 
 true_or_false(\$verbose,\$subdirs);
@@ -187,6 +190,14 @@ sub true_or_false {
   }
 }
 
+sub interpolate {
+  my $ref   = shift;
+  return unless defined $ref;
+  $ref     =~ s/^~([^\/]*)/($1 ? getpwnam($1):getpwuid($<))[7] || "~$1"/eg;
+  $ref     =~ s/\$(\w+)/$ENV{$1}/g;
+  $ref;
+}
+
 __END__
 
 =head1 NAME
@@ -249,20 +260,235 @@ To run from a cron job once daily at 1 am, enter something like this:
 
 The configuration file is a Windows-style Ini file. It consists of a
 [Globals] section and one section for each podcast subscription. A
-minimal config file will look like this:
+simple config file will look like this:
 
  [Globals]
- base = /home/fred/podcasts
+ base             = ~/podcasts
+ verbose          = yes
+ rewrite_filename = yes
+ upgrade_tag      = auto
 
  [NYTimes]
  description = The New York Times Front Page
- url = http://www.nytimes.com/services/xml/rss/nyt/podcasts/frontpage.xml
+ limit = 2
+ url   = http://www.nytimes.com/services/xml/rss/nyt/podcasts/frontpage.xml
 
  [NPR]
  description = NPR 7 am news summary
  url         = http://www.npr.org/rss/podcast.php?id=500001
 
+This config file designates the directory ~/podcasts (subdirectory
+"podcasts" in your home directory) to receive the podcast files. We
+turn on verbose progress reporting and activate the rewrite_filename
+and upgrade_tag features. As described in more detail later, the first
+option replaces the cryptic default names of the podcast files with
+longer more informative names, while the second normalizes the ID3 tag
+information in the podcast files (e.g. setting the genre to
+"Podcast").
 
+We define two feeds, each in its own section. The [NYTimes] feed
+subscribes to the New York Times front page podcast, located at the
+url indicated by the "url" option. We specify a limit of 2 on the
+number of podcasts to have on hand.  The [NPR] feed does the same
+thing for the National Public Radio morning news summary, except that
+there is no limit.
+
+After running the script the /tmp/podcasts directory will contain one
+directory each for the NYTimes and NPR feeds, and will look something
+like this:
+
+ % ls -lRh podcasts/
+ podcasts/:
+ total 0
+ drwxrwxr-x  2 lstein lstein 128 Dec 28 14:18 7AM_ET_News_Summary/
+ drwxrwxr-x  2 lstein lstein 144 Dec 28 14:18 New_York_Times_Front_Page/
+
+ podcasts/7AM_ET_News_Summary:
+ total 2.6M
+ -rw-rw-r--  1 lstein lstein 2.6M Dec 28 07:16 NPR_News_Summary_for_Thursday,_Dec_28_2006_at_700_AM_EST.mp3
+
+ podcasts/New_York_Times_Front_Page:
+ total 8.6M
+ -rw-rw-r--  1 lstein lstein 5.1M Dec 26 21:00 NYT_Front_Page_for_12272006.mp3
+ -rw-rw-r--  1 lstein lstein 3.5M Dec 27 21:48 NYT_Front_Page_for_12282006.mp3
+
+The name of the [Globals] section is significant (including the
+capital "G") and cannot be changed. In particular, if no base is
+specified, then the script will not run. The names of each of the feed
+sections are not meaningful except that they must be unique. In other
+words, we could just as easily have named them [Feed 1] and [Feed 2].
+
+Most of the [Globals] options can be overridden in individual feed
+sections. This allows you to create global settings, such as "limit",
+which are then overidden on a case-by-case basis in each feed section.
+
+For boolean (true/false) options, you may use perl-style truth values
+(0 for false, 1 for true) or the strings "no" or "yes".
+
+A line that begins with the # symbol is a comment and has no effect on
+processing the config file.
+
+=head2 Global section-specific options
+
+The following options are specific to the [Globals] section and cannot
+be overidden in the feed sections.
+
+=over 4
+
+=item base
+
+Set the base directory for the downloaded podcasts. This option must
+be present. The shortcuts ~, ~user and $ENVIRONMENT_VARIABLE are all
+recognized.
+
+=item verbose
+
+A boolean controlling the verbosity of the output from the script. Set
+to 1 or "yes" to generate status information for each file
+downloaded. Defaults to "no."
+
+=item generate_playlist
+
+A boolean controlling whether to generate a playlist for the podcasts
+downloaded in the current session. Defaults to "no."
+
+=item playlist_name
+
+If generate_playlist is set to a true value, this option allows you to
+control the name of the generated playlist file. This can contain
+strftime() style time interpolation codes so that the playlist name
+contains a timestamp. The default is "%Y-%m-%d_podcasts.m3u", which
+will produce playlists like "2006-12-28_podcasts.m3u". You will want
+to add the hour (%H) and minute (%M) if you plan on freshening
+podcasts more than once a day.
+
+The playlist name may also contain path elements - the subdirectories
+will be created as necessary. Relative paths will be resolved relative
+to the base.
+
+=item playlist_base
+
+If generate_playlist is set to a true value, and if you are mirroring
+the podcasts to a removable medium such as an sdcard for later use
+with a portable music player device, you will need to change this
+option. It contains the directory path to each podcast file as it will
+appear to the music player. For example, if you mount the medium at
+/mnt/sdcard and keep podcasts in /mnt/sdcard/podcasts, then the base
+and playlist_base options might look like this:
+
+  base          = /mnt/sdcard/podcasts
+  playlist_base = /podcasts
+
+For Windows-based devices, you might have to specify a playlist_base
+using Windows filesystem conventions, e.g.:
+
+  playlist_base = \podcasts
+
+or even
+
+  playlist_base = C:\podcasts
+
+The default is to use the same base path as specified by the "base"
+option.
+
+=item subdirs
+
+Ordinarily each podcast will be placed in a directory named after its
+channel, directly underneath the directory specified by "base." If
+this boolean is set to true ("yes"), then each feed section can
+specify additional levels of directories in which to place the podcast
+files using the "subdir" option.
+
+For example, the example config file shown earlier will store the NY
+Times podcasts under ~/podcasts/New_York_Times_Front_Page, and the NPR
+news summaries under ~/podcasts/7AM_ET_News_Summary. You can organize
+your podcasts a little better in this way:
+
+ [Globals]
+ base             = ~/podcasts
+ verbose          = yes
+ rewrite_filename = yes
+ upgrade_tag      = auto
+ subdirs          = yes
+
+ [NYTimes]
+ description = The New York Times Front Page
+ limit  = 2
+ subdir = News/Newspapers
+ url    = http://www.nytimes.com/services/xml/rss/nyt/podcasts/frontpage.xml
+
+ [NPR]
+ description = NPR 7 am news summary
+ subdir      = News/Radio
+ url         = http://www.npr.org/rss/podcast.php?id=500001
+
+Now the Times podcast files will be stored in the directory
+~/podcasts/News/Newspapers/New_York_Times_Front_Page and the NPR news
+in ~/podcasts/News/Radio/7AM_ET_News_Summary.
+
+=back
+
+=head2 Feed section options
+
+The following options appear in individual feed sections. They can
+also be placed in the [Globals] section to provide defaults for all
+feeds. For example, you can place "limit = 5" in [Globals] in order to
+limit all feeds by default to a maximum number of five podcast files
+per feed, and then override the limit on a feed-by-feed basis with
+additional "limit" options in individual feed sections.
+
+=over 4
+
+=item description
+
+This is a text description of the feed. It is there for documentation
+purposes only and can safely be omitted.
+
+=item url
+
+This is the URL for the RSS (podcast subscription) for the podcast. It
+is mandatory.
+
+=item timeout
+
+Control how long (in seconds), the script will wait before it times
+out a slow remote server during the RSS-reading or downloading
+process. Incomplete downloads will be removed.
+
+=item upgrade_tag
+
+Some podcast files have informative ID3 tags, but many
+don't. Particularly annoying is the genre, which may be given as
+"Speech", "Podcast", or anything else. The upgrade_tag option, if set
+to a non-false value, will attempt to normalize the ID3 tags from the
+information provided by the RSS feed information. Specifically, the
+title will be set to the title of the podcast, the album will be set
+to the title of the channel (e.g. "New York Times Front Page"), the
+artist will be set to the channel author (e.g. "The New York Times"),
+the year will be set to the publication date, the genre will be set to
+"Podcast" and the comment will be set to the channel description. You
+can change some of these values using the options "force_genre,"
+"force_album," and "force_artist."
+
+The value of upgrade_tag is one of:
+
+ no        Don't mess with the ID3 tags
+ id3v1     Upgrade the ID3 version 1 tag
+ id3v2.3   Upgrade the ID3 version 2.3 tag
+ id3v2.4   Upgrade the ID3 version 2.4 tag
+ auto      Choose the best tag available
+
+Depending on what optional Perl ID3 manipulation modules you have
+installed, you may be limited in what level of ID3 tag you can update:
+
+ Audio::TagLib            all versions through 2.4
+ MP3::Tag                 all versions through 2.3
+ MP3::Info                only version 1.0
+
+Choosing "auto" is your best bet. It will dynamically find what Perl
+modules you have installed, and choose the best tag format.
+
+=back
 
 =head1 SEE ALSO
 
