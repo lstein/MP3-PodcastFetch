@@ -6,6 +6,7 @@ my $build = Module::Build->new(
 			       requires => {
 					    perl               => '5.8',
 					    LWP                => '5.8',
+					    'Date::Parse'      => '2.20',
 					    'HTML::Parser'     => '3.50',
 					    'Config::IniFiles' => '2.00',
 					    },

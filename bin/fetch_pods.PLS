@@ -77,21 +77,21 @@ STDOUT->flush;
 
 my $verbose           = $cfg->val(Globals=>'verbose');
 my $base              = $cfg->val(Globals=>'base');
-my $subdirs           = $cfg->val(Globals=>'subdirs');
-my $generate_playlist = $cfg->val(Globals=>'keep_old');
-my $playlist_base     = $cfg->val(Globals=>'playlist_base')     || $base;
-my $playlist_name     = $cfg->val(Globals=>'playlist_location') || '%Y-%m-%d-%H:%S-podcasts.m3u';
+my $subdirs           = $cfg->val(Globals=>'subdirs')       || 0;
+my $generate_playlist = $cfg->val(Globals=>'keep_old')      || 0;
+my $playlist_base     = $cfg->val(Globals=>'playlist_base') || $base;
+my $playlist_name     = $cfg->val(Globals=>'playlist_name') || '%Y-%m-%d-%H:%S-podcasts.m3u';
 my @sections          = grep {!/globals/i} $cfg->Sections;
 
 true_or_false(\$verbose,\$subdirs);
 
-my $m3ufile;
+my ($m3ufile,$playlist_path);
 if ($generate_playlist) {
   $playlist_name = File::Spec->rel2abs($playlist_name,$base);
-  my $path   = strftime($playlist_name,localtime);
-  my $dir    = dirname($path);
+  $playlist_path = strftime($playlist_name,localtime);
+  my $dir        = dirname($playlist_path);
   -d $dir or mkpath($dir) or die "Couldn't create directory $dir: $!";
-  $m3ufile = IO::File->new($path,">") or die "Couldn't open $path for writing: $!";
+  $m3ufile       = IO::File->new($playlist_path,">") or die "Couldn't open $playlist_path for writing: $!";
   print $m3ufile "#EXTM3U\r\n";
 }
 
@@ -107,8 +107,6 @@ for my $podcast (@sections) {
   my $timeout           = $cfg->val($podcast=>'timeout');
   my $genre             = $cfg->val($podcast=>'force_genre');
 
-  my $dir     = $subdirs && $subdir ? "$base/$subdir" : $base;
-
   unless (defined $url) {
     warn "No podcast RSS URL defined for $podcast\n";
     next;
@@ -117,7 +115,9 @@ for my $podcast (@sections) {
   true_or_false(\$keep_old,\$rewrite,\$generate_playlist);
 
   $limit = 1000 if $limit eq 'none';
-  my $feed   = MP3::PodcastFetch->new(-base         => $dir,
+  my $feed   = MP3::PodcastFetch->new(
+                                 -base              => $base,
+                                 -subdir            => $subdirs ? $subdir : '',
 				 -rss               => $url,
 				 -max               => $limit,
 				 -mirror_mode       => $mode,
@@ -137,6 +137,7 @@ for my $podcast (@sections) {
 }
 
 $date = localtime;
+unlink $playlist_path if $playlist_path && !$fetched;
 print "$date END fetch_pods: $fetched fetched, $skipped skipped, $deleted deleted, $errors errors.\n\n";
 
 exit 0;

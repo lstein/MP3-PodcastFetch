@@ -14,12 +14,13 @@ use File::Basename 'basename';
 use File::Path 'mkpath';
 use IO::Dir;
 
-use Time::ParseDate;
+use Date::Parse;
 
 our $VERSION = '1.00';
 
 BEGIN {
-  my @accessors = qw(base rss max timeout mirror_mode verbose rewrite_filename upgrade_tags
+  my @accessors = qw(base subdir rss
+		     max timeout mirror_mode verbose rewrite_filename upgrade_tags
 		     keep_old playlist_handle playlist_base force_genre force_artist
 		     force_album);
   for my $accessor (@accessors) {
@@ -37,6 +38,7 @@ END
 
 # arguments:
 # -base             => base directory for podcasts, e.g. /var/podcasts
+# -subdir           => subdirectory for this podcast, e.g. music
 # -rss              => url of the RSS feed to read
 # -max              => maximum number of episodes to keep
 # -timeout          => timeout for URL requests
@@ -54,6 +56,7 @@ sub new {
   my %args  = @_;
   my $self = bless {},ref $class || $class;
   $self->base($args{-base}       || '/tmp/podcasts');
+  $self->subdir($args{-subdir});
   $self->rss($args{-rss}         || croak 'please provide -rss argument');
   $self->max($args{-max}                             );
   $self->timeout($args{-timeout} || 30               );
@@ -98,13 +101,14 @@ sub update {
   my $description  = $channel->description;
   my $dir          = $self->generate_directory($channel);
   my @items        = sort {$b->timestamp <=> $a->timestamp} grep {$_->url} $channel->items;
+  my $total        = @items;
 
   # if there are more items than we want, then remove the oldest ones
   if (my $max = $self->max) {
     splice(@items,$max) if @items > $max;
   }
 
-  $self->log("Updating podcasts for $title. ",scalar @items," items available...");
+  $self->log("$title: $total podcasts available. Mirroring ",scalar @items,"...");
   {
     $self->{tabs}++; # for formatting
     $self->mirror($dir,\@items,$channel);
@@ -229,6 +233,7 @@ sub write_playlist {
   my $album    = $channel->title;
   my $duration = $self->get_duration($filename,$item);
   my $base     = $self->playlist_base || $self->base;
+  my $subdir   = $self->subdir;
   my $dir      = $self->channel_dir($channel);
 
   # This is dodgy. We may be writing the podcast files onto a Unix mounted SD card
@@ -237,10 +242,10 @@ sub write_playlist {
   my $path;
   if ($base =~ m!^[A-Z]:\\! or $base =~ m!\\!) {  # Windows style path
     eval { require File::Spec::Win32 } unless File::Spec::Win32->can('catfile');
-    $path       = File::Spec::Win32->catfile($base,$dir,$filename);
+    $path       = File::Spec::Win32->catfile($base,$subdir,$dir,$filename);
   } else {                                        # Unix style path
     eval { require File::Spec::Unix } unless File::Spec::Unix->can('catfile');
-    $path       = File::Spec::Unix->catfile($base,$dir,$filename);
+    $path       = File::Spec::Unix->catfile($base,$subdir,$dir,$filename);
   }
   print $playlist "#EXTINF:$duration,$album: $title\r\n";
   print $playlist $path,"\r\n";
@@ -253,7 +258,7 @@ sub fix_tags {
 
   my $mtime   = (stat($filename))[9];
   my $pubdate = $item->pubDate;
-  my $secs    = $pubdate ? parsedate($pubdate) : $mtime;
+  my $secs    = $pubdate ? str2time($pubdate) : $mtime;
   my $year    = (localtime($secs))[5]+1900;
   my $album   = $self->force_album  || $channel->title;
   my $artist  = $self->force_artist || $channel->author;
@@ -303,7 +308,7 @@ sub make_filename {
 sub generate_directory {
   my $self    = shift;
   my $channel = shift;
-  my $dir     = File::Spec->catfile($self->base,$self->channel_dir($channel));
+  my $dir     = File::Spec->catfile($self->base,$self->subdir,$self->channel_dir($channel));
 
   # create the thing
   unless (-d $dir) {
