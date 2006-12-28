@@ -140,9 +140,17 @@ sub mirror {
     $to_fetch{$basename}{item}    = $i;
   }
 
-  unless ($self->keep_old) {
-    # remove any files that are no longer on %to_fetch
-    my @goners = grep {!$to_fetch{$_}} keys %current_files;
+  # find files that are no longer on the subscription list
+  my @goners = grep {!$to_fetch{$_}} keys %current_files;
+
+  if ($self->keep_old) {
+    my $max   = $self->max;
+    if (@goners + keys %to_fetch > $max) {
+      $self->log_error("The episode limit of $max has been reached. Will not fetch additional podcasts.");
+      return;
+    }
+  }
+  else {
     my $gone   = unlink @goners;
     $self->bump_deleted($gone);
     $self->log("$_: deleted") foreach @goners;
@@ -332,7 +340,7 @@ sub safestr {
   $str =~ tr/ /_/s;
 
   # get rid of odd characters
-  $str =~ tr/a-zA-Z0-9_+^:.%$@=,-//cd;
+  $str =~ tr/a-zA-Z0-9_+^.%$@=,-//cd;
 
   return $str;
 }

@@ -14,6 +14,10 @@ my $build = Module::Build->new(
 					    'bin/fetch_pods.PLS' => 'bin/fetch_pods.pl',
 					    },
 			       script_files => ['bin/fetch_pods.pl'],
+			       install_path => { conf => '/usr/local/etc' },
+			       conf_files   => {'conf/fetchpods.conf' => 'conf/fetchpods.conf'},
+			       sign => 1,
 			      );
+$build->add_build_element('conf');
 $build->create_build_script;
 exit 0;

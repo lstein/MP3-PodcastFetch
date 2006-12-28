@@ -68,7 +68,7 @@ END
 my $cfg = Config::IniFiles->new(-file=>$config_file,-default=>'Globals')
   or die "Couldn't open config file $config_file: $!";
 
-$pid_file = $cfg->val(Globals=>'pidfile');
+$pid_file = $cfg->val(Globals=>'pidfile') || '/tmp/fetchPods.pid';
 write_pidfile($pid_file) or exit 0;
 
 my $date = localtime;
@@ -98,14 +98,16 @@ if ($generate_playlist) {
 my ($fetched,$skipped,$deleted,$errors) = (0,0,0,0);
 for my $podcast (@sections) {
   my $url               = $cfg->val($podcast=>'url');
-  my $limit             = $cfg->val($podcast=>'limit');
-  my $subdir            = $cfg->val($podcast=>'subdir');
-  my $keep_old          = $cfg->val($podcast=>'keep_old');
-  my $rewrite           = $cfg->val($podcast=>'rewrite_filename');
-  my $upgrade           = $cfg->val($podcast=>'upgrade_tag');
-  my $mode              = $cfg->val($podcast=>'mirror_mode');
-  my $timeout           = $cfg->val($podcast=>'timeout');
+  my $limit             = $cfg->val($podcast=>'limit')    || 'none';
+  my $subdir            = $cfg->val($podcast=>'subdir')   || 0;
+  my $keep_old          = $cfg->val($podcast=>'keep_old') || 0;
+  my $rewrite           = $cfg->val($podcast=>'rewrite_filename') || 0;
+  my $upgrade           = $cfg->val($podcast=>'upgrade_tag') || 0;
+  my $mode              = $cfg->val($podcast=>'mirror_mode') || 'modified-since';
+  my $timeout           = $cfg->val($podcast=>'timeout')     || 600;
   my $genre             = $cfg->val($podcast=>'force_genre');
+  my $artist            = $cfg->val($podcast=>'force_artist');
+  my $album             = $cfg->val($podcast=>'force_album');
 
   unless (defined $url) {
     warn "No podcast RSS URL defined for $podcast\n";
@@ -125,6 +127,8 @@ for my $podcast (@sections) {
 				 -upgrade_tag       => $upgrade,
 				 -verbose           => $verbose,
                                  -force_genre       => $genre,
+                                 -force_artist      => $artist,
+                                 -force_album       => $album,
                                  -keep_old          => $keep_old,
                                  -playlist_handle   => $m3ufile,
                                  -playlist_base     => $playlist_base,
@@ -213,9 +217,52 @@ Use this Perl script to fetch and maintain a directory of podcast
 subscriptions. Information about which podcasts to fetch are stored in
 a configuration file. You can control how many podcast files to keep,
 where to keep them, whether to rationalize their ID3 tags, and whether
-to delete inactive podcasts.
+to delete older podcast files. This script will also create playlists
+listing recently-fetched podcasts.
 
-=head2 Configuration File
+To use this script, create a configuration file (see "Configuration
+File Format") listing global options and the podcasts you wish to
+subscribe to; a sample configuration file is located in the
+distribution directory undef ./conf/fetchpods.conf. Then run
+fetch_pods from the command line. You can explicitly give the path to
+the configuration file on the command line as shown here:
+
+  fetch_pods.pl ~/pods/news_pods.conf
+
+If called with no arguments, fetch_pods.pl will look for a default
+configuration file in the following locations:
+
+  ~/.fetchpods
+  /usr/local/etc/fetchpods.conf
+  /usr/etc/fetchpods.conf
+  /etc/fetchpods.conf
+  /path/to/this/binary/../etc/fetchpods.conf
+  /path/to/this/binary/../conf/fetchpods.conf
+
+It will stop and process the first configuration file it finds.
+
+To run from a cron job once daily at 1 am, enter something like this:
+
+ 0 1 * * * /usr/bin/fetch_pods.pl >> ~/fetchpods.log
+
+=head1 Configuration File
+
+The configuration file is a Windows-style Ini file. It consists of a
+[Globals] section and one section for each podcast subscription. A
+minimal config file will look like this:
+
+ [Globals]
+ base = /home/fred/podcasts
+
+ [NYTimes]
+ description = The New York Times Front Page
+ url = http://www.nytimes.com/services/xml/rss/nyt/podcasts/frontpage.xml
+
+ [NPR]
+ description = NPR 7 am news summary
+ url         = http://www.npr.org/rss/podcast.php?id=500001
+
+
 
 =head1 SEE ALSO
 

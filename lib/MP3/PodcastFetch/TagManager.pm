@@ -1,5 +1,5 @@
 package MP3::PodcastFetch::TagManager;
-# $Id: TagManager.pm,v 1.1 2006/12/28 16:51:13 lstein Exp $
+# $Id: TagManager.pm,v 1.2 2006/12/28 19:16:20 lstein Exp $
 
 # Handle various differences between ID3 tag libraries
 
@@ -15,6 +15,7 @@ sub new {
 sub fix_tags {
   my $self = shift;
   my ($filename,$tags,$upgrade_type) = @_;
+  return unless $upgrade_type;
   $self->{$upgrade_type} ||= $self->load_tag_fixer_code($upgrade_type) or die "Couldn't load appropriate tagging library: $@";
   $self->{$upgrade_type}->($filename,$tags);
 }
