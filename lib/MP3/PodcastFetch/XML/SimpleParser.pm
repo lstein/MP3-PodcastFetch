@@ -3,9 +3,142 @@ use HTML::Parser;
 
 =head1 XML::SimpleParser -- a simple sax-based parser
 
-=head2 SYNOPSIS
+=head1 SYNOPSIS
 
-=head USAGE
+ package MyFooParser;
+ use base 'MP3::PodcastFetch::XML::SimpleParser';
+
+ # process <foo> tags
+ sub t_foo {
+   my $self  = shift;
+   my $attrs = shift;
+   if ($attrs) {  # tag is starting
+       # do something
+   }
+   else {
+       # do something else
+   }
+ }
+
+ my $parser = MyFooParser->new();
+ $parser->parse_file('/path/to/an/XML/file')
+ my @results = $parser->results;
+
+=head1 DESCRIPTION
+
+This package provides a very simple stream-based XML parser. It
+handles open and close tags and attributes. It does not handle
+namespaces very well. It was written to support a variety of projects
+that do not need sophisticated processing, including
+MP3::PodcastFetch.
+
+Do not confuse this with XML::SimpleParser, which is a DOM-based
+parser.
+
+To use this module, create a new subclass of
+MP3::PodcastFetch::XML::SimpleParser, and define a new method for each
+tag that you wish to process (all other tags will be ignored). The
+method should be named t_method_name, where "method_name" should be
+replaced by the name of the tag you wish to handle. Tag names are case
+sensitive. For exammple, if the XML file you wish to parse looks like
+this:
+
+  <foo size="2">
+     <bar>Some char data</bar>
+     <bar>Some more char data</bar>
+  </foo>
+
+You could define a t_foo() and a t_bar() method to handle each of
+these tags. If a tag name has a funny character in it, such as "-",
+use a method that has an underscore there instead. The same goes for
+namespace tags: for a tag like <podcast:foo>, define a method named
+podcast_foo(). Sorry, but dynamic resolution of namespaces is not
+supported.
+
+Methods should look like this:
+
+ sub t_foo {
+   my $self  = shift;
+   my $attrs = shift;
+   if ($attrs) {
+      # do something to handle the start tag
+   }
+   else {
+      # do something to handle the end tag
+   }
+ }
+
+When the <foo> start tag is encountered, a hash reference containing
+the start tag's attributes are passed as the second argument (if there
+are no attributes, then an empty hash is provided). When the end tag
+is encountered, $attrs will be undef. This allows you to distinguish
+between start and end tags.
+
+Ordinarily you will want to set up objects when encountering the start
+tag and close and clean them up when encountering the end tag. The
+following example shows how to transform the snippet of XML shown
+above into the following data structure:
+
+ { size      => 3,
+   bar_list  => ['Some char data','Some more char data']
+ }
+
+Here's the code:
+
+ sub t_foo {
+   my $self  = shift;
+   my $attrs = shift;
+   if ($attrs) { # starting
+      $self->{current} = { size     => $attrs->{size}
+                           bar_list => []
+                         }
+   }
+   else {
+      $self->add_object($self->{current});
+      undef $self->{current};
+   }
+ }
+
+ sub t_bar {
+    my $self  = shift;
+    my $attrs = shift;
+    if ($attrs) { # starting
+    }
+    else {
+      my $list = $self->{current}{bar_list};
+      die "ERROR: got a <bar> without an enclosing <foo>" unless $list;
+      my $data = $self->char_data; # get contents
+      push @$list,@data;
+    }
+ }
+
+When t_foo() encounters the start of the <foo> tag, it creates a new
+hash and stores it in a temporary hash key called "current". When it
+encounters the </foo> tag (indicated by an undefined $attrs argument),
+it fetches this hash and calls the inherited add_object() method to
+add this result to the list of results to return at the end of the
+parse. It then undefs the {current} key.
+
+The t_bar method does nothing when the opening <bar> is encountered,
+but when </bar> is seen, it fetches the array ref pointed to by
+$self->{current}{bar_list} and adds the text content of the
+<bar></bar> section to the list. The inherited char_data() method
+makes it possible to get at this data. It then pushes the character
+data onto the end of the list.
+
+When working with this subclass, you would call parse_file() to parse
+an entire file at once or parse() to parse a data stream a bit at a
+time. When the parse is finished, you'd call result() to get the list
+of data objects (in this case, a single hash) added by add_object().
+
+You can also define a callback that will be invoked each time
+add_object() is called in order to process each object as it comes in,
+rather than storing it for later retrieval.
+
+You may also override the do_tag() method in order to process
+unexpected tags that do not have a named method to process them.
+
+=head1 METHODS
 
 =over 4
 
@@ -13,6 +146,12 @@ use HTML::Parser;
 
 use warnings;
 use strict;
+
+=item $parser = MyParserSubclass->new()
+
+This method creates a new parser object in the current subclass. It takes no arguments.
+
+=cut
 
 sub new {
   my $class  = shift;
@@ -26,6 +165,13 @@ sub new {
   return $self;
 }
 
+=item $low_level_parser = $parser->parser([$new_low_level_parser])
+
+MP3::PodcastFetch::XML::SimpleParser uses HTML::Parser (in xml_mode)
+to do its low-level parsing. This method sets or gets that parser.
+
+=cut
+
 sub parser {
   my $self = shift;
   my $d    = $self->{'XML::SimpleParser::parser'};
@@ -33,22 +179,45 @@ sub parser {
   $d;
 }
 
+=item $parser->parse_file($path)
+
+This method fully parses the file given at the indicated path.
+
+=cut
+
 sub parse_file {
   shift->parser->parse_file(@_);
 }
+
+=item $parser->parse($partial_data)
+
+This method parses the partial XML data given by the string
+$partial_data. This allows incremental parsing of web data using,
+e.g., the LWP library. Call this method with each bit of partial data,
+then call eof() at the end to allow the parser to clean up its
+internal data structures.
+
+=cut
 
 sub parse {
   shift->parser->parse(@_);
 }
 
+=item $parser->eof()
+
+Tell the parser to finish the parse. Use at the end of a series of
+parse() calls.
+
+=cut
+
 sub eof {
   shift->parser->eof;
 }
 
-=item $request->tag_starts
+=item $parser->tag_starts
 
-This method is called internally during the parse to handle a start
-tag.  It should not be called by application code.
+This method is called during the parse to handle a start tag. It
+should not ordinarily be overridden or called directly.
 
 =cut
 
@@ -58,16 +227,16 @@ sub tag_starts {
   my ($tag,$attrs) = @_;
   $tag =~ s/[^\w]/_/g;
   my $method = "t_$tag";
-  $self->{char_data} = '';  # clear char data
+  $self->{'XML::SimpleParser::char_data'} = '';  # clear char data
   $self->can($method)
     ? $self->$method($attrs) 
     : $self->do_tag($tag,$attrs);
 }
 
-=item $request->tag_stops
+=item $parser->tag_stops
 
-This method is called internally during the parse to handle a stop
-tag.  It should not be called by application code.
+This method is called during the parse to handle a stop tag. It should
+not ordinarily be overridden or called directly.
 
 =cut
 
@@ -82,28 +251,27 @@ sub tag_stops {
     : $self->do_tag($tag);
 }
 
-=item $request->char_data
+=item $parser->char_data
 
 This method is called internally during the parse to handle character
-data.  It should not be called by application code.
+data.  It should not ordinarily be overridden or called directly.
 
 =cut
 
 sub char_data {
   my $self = shift;
   if (@_ && length(my $text = shift)>0) {
-    $self->{char_data} .= $text;
+    $self->{'XML::SimpleParser::char_data'} .= $text;
   } else {
-    $self->trim($self->{char_data});
+    $self->trim($self->{'XML::SimpleParser::char_data'});
   }
 }
 
+=item $parser->cleanup
 
-=item $request->cleanup
-
-This method is called internally at the end of the parse to handle any
-cleanup that is needed.  The default behavior is to do nothing, but it
-can be overridden by a subclass to provide more sophisticated
+This method is provided to be called at the end of the parse to handle
+any cleanup that is needed.  The default behavior is to do nothing,
+but it can be overridden by a subclass to provide more sophisticated
 processing.
 
 =cut
@@ -112,7 +280,7 @@ sub cleanup {
   my $self = shift;
 }
 
-=item $request->clear_results
+=item $parser->clear_results
 
 This method is called internally at the start of the parse to clear
 any accumulated results and to get ready for a new parse.
@@ -120,13 +288,13 @@ any accumulated results and to get ready for a new parse.
 =cut
 
 sub clear_results {
-  shift->{results} = [];
+  shift->{'XML::SimpleParser::results'} = [];
 }
 
-=item $request->add_object(@objects)
+=item $parser->add_object(@objects)
 
-This method is called internally during the parse to add one or more
-objects (e.g. a Bio::Das::Feature) to the results list.
+This method can be called during the parse to add one or more objects
+to the results list.
 
 =cut
 
@@ -137,16 +305,14 @@ sub add_object {
     eval {$cb->(@_)};
     warn $@ if $@;
   } else {
-    push @{$self->{results}},@_;
+    push @{$self->{'XML::SimpleParser::results'}},@_;
   }
 }
 
-=item @results = $request->results
+=item @results = $parser->results
 
 In a list context this method returns the accumulated results from the
-DAS request. The contents of the results list is dependent on the
-particular request, and you should consult each of the subclasses to
-see what exactly is returned.
+parse.
 
 In a scalar context, this method will return an array reference.
 
@@ -154,15 +320,15 @@ In a scalar context, this method will return an array reference.
 
 sub results {
   my $self = shift;
-  my $r = $self->{results} or return;
+  my $r = $self->{'XML::SimpleParser::results'} or return;
   return wantarray ? @$r : $r;
 }
 
-=item $request->do_tag
+=item $parser->do_tag
 
-This method is called internally during the parse to handle a tag.  It
-should not be called by application code, but can be overridden by a
-subclass to provide tag-specific processing.
+This method is called whenver the parse encounters a tag that does not
+have a specific method to handle it. The call signature is identical
+to t_TAGNAME methods. By default, it does nothing.
 
 =cut
 
@@ -172,22 +338,26 @@ sub do_tag {
   # do nothing
 }
 
-=item $callback = $request->callback([$new_callback])
+=item $callback = $parser->callback([$new_callback])
 
-Internal accessor for getting or setting the callback code that will
-be used to process objects as they are generated by the parse.
+This accessor allows you to get or set a callback code that will be
+used to process objects generated by the parse. If a callback is
+defined, then add_object() will not add the object to the results
+list, but will instead pass it to the callback for processing. If
+multiple objects are passed to add_object, then they will be passed to
+the callback as one long argument list.
 
 =cut
 
 # get/set callback
 sub callback {
   my $self = shift;
-  my $d = $self->{callback};
-  $self->{callback} = shift if @_;
+  my $d = $self->{'XML::SimpleParser::callback'};
+  $self->{'XML::SimpleParser::callback'} = shift if @_;
   $d;
 }
 
-=item $trimmed_string = $request->trim($untrimmed_string)
+=item $trimmed_string = $parser->trim($untrimmed_string)
 
 This internal method strips leading and trailing whitespace from a
 string.
@@ -207,42 +377,14 @@ sub trim {
 
 =back
 
-=head2 The Parsing Process
+=head1 SEE ALSO
 
-This module and its subclasses use an interesting object-oriented way
-of parsing XML documents that is flexible without imposing a large
-performance penalty.
-
-When a tag start or tag stop is encountered, the tag and its
-attributes are passed to the tag_starts() and tag_stops() methods
-respectively.  These methods both look for a defined method called
-t_TAGNAME (where TAGNAME is replaced by the actual name of the tag).
-If the method exists it is invoked, otherwise the tag and attribute
-data are passed to the do_tag() method, which by default simply
-ignores the tag.
-
-A Bio::Das::Request subclass that wishes to process the
-E<lt>FOOBARE<gt> tag, can therefore define a method called t_FOOBAR
-which takes two arguments, the request object and the tag attribute
-hashref.  The method can distinguish between E<lt>FOOBARE<gt> and
-E<lt>/FOOBARE<gt> by looking at the attribute argument, which will be
-defined for the start tag and undef for the end tag.  Here is a simple
-example:
-
-  sub t_FOOBAR {
-    my $self       = shift;
-    my $attributes = shift;
-    if ($attributes) {
-       print "FOOBAR is starting with the attributes ",join(' ',%$attributes),"\n";
-    } else {
-       print "FOOBAR is ending\n";
-    }
-  }
-
-The L<Bio::Das::Request::Dsn> subclass is a good example of a simple
-parser that uses t_TAGNAME methods exclusively.
-L<Bio::Das::Request::Stylesheet> is an example of a parser that also
-overrides do_tag() in order to process unanticipated tags.
+L<podcast_fetch.pl>,
+L<MP3::PodcastFetch>,
+L<MP3::PodcastFetch::Feed>,
+L<MP3::PodcastFetch::Feed::Channel>,
+L<MP3::PodcastFetch::Feed::Item>,
+L<MP3::PodcastFetch::TagManger>,
 
 =head1 AUTHOR
 
@@ -253,8 +395,6 @@ Copyright (c) 2006 Cold Spring Harbor Laboratory
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.  See DISCLAIMER.txt for
 disclaimers of warranty.
-
-=head1 SEE ALSO
 
 =cut
 

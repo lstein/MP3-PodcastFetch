@@ -68,7 +68,7 @@ END
 my $cfg = Config::IniFiles->new(-file=>$config_file,-default=>'Globals')
   or die "Couldn't open config file $config_file: $!";
 
-$pid_file = $cfg->val(Globals=>'pidfile') || '/tmp/fetchPods.pid';
+$pid_file = $cfg->val(Globals=>'pidfile') || File::Spec->catdir(File::Spec->tmpdir,'fetchPods.pid');
 write_pidfile($pid_file) or exit 0;
 
 my $base  = interpolate($cfg->val(Globals=>'base'));
@@ -426,6 +426,13 @@ Now the Times podcast files will be stored in the directory
 ~/podcasts/News/Newspapers/New_York_Times_Front_Page and the NPR news
 in ~/podcasts/News/Radio/7AM_ET_News_Summary.
 
+=item pidfile
+
+This script writes out a file containing its process ID (PID) in order
+to prevent the script from being run twice at the same time. This
+option lets you change the path to the file (default
+/tmp/fetch_pods.pid).
+
 =back
 
 =head2 Feed section options
@@ -454,6 +461,30 @@ is mandatory.
 Control how long (in seconds), the script will wait before it times
 out a slow remote server during the RSS-reading or downloading
 process. Incomplete downloads will be removed.
+
+=item rewrite_filename
+
+If this option is true (default false) the physical name of the
+podcast file, which is usually something cryptic like PUB_071206.mp3,
+will be replaced with a long name based on the podcast's title.
+
+=item mirror_mode
+
+This option controls how mirroring of podcast files is performed and
+can be one of "modified-since" or "exists". The default,
+"modified-since," will fetch the podcast file if either:
+
+ 1. a local copy of the podcast is absent.
+ 2. a local copy exists, but the version on the remote server is
+    more recent.
+
+In contrast "exists" will cause the file to be fetched only if (1)
+applies. This reduces network traffic, but opens the slight
+possibility that the remote podcast might be updated (e.g. for a
+correction) and that you won't mirror the change. This option is
+primarily intended to work around broken podcasts which have their
+modification dates set in the future and thus are unecessarily
+refreshed each time the script runs.
 
 =item upgrade_tag
 
@@ -486,13 +517,75 @@ installed, you may be limited in what level of ID3 tag you can update:
  MP3::Info                only version 1.0
 
 Choosing "auto" is your best bet. It will dynamically find what Perl
-modules you have installed, and choose the best tag format.
+modules you have installed, and choose the one that provides the most
+recent tag version.
+
+=item limit
+
+By default, fetch_pods.pl will fetch all the podcasts that are
+currently mentioned in the RSS feed XML document. MP3 files that are
+no longer listed in the document will be removed. You can override
+this behavior using the "limit" option. This sets an upper bound on
+the number of MP3 files that can be stored, either on a global basis,
+or a per-feed basis. For example, if you specify limit=4 for the NY
+Times Front Page, then only the most recent four NYT podcasts will be
+stored, even if the RSS feed lists more.
+
+Also see the "keep_old" option.
+
+=item keep_old
+
+This is a boolean option which, if true, will cause expired podcasts
+to be kept even if after they are no longer listed in the RSS feed
+file. This also changes the behavior of the limit option. When
+keep_old is false, limit will delete older podcasts in order to make
+room for newer ones. When keep_old is true, then newer podcasts will
+not be fetched if the total number of stored podcasts for the current
+feed exceeds the limit. You will have to manually delete some podcast
+files in order to make room for more.
+
+=item force_genre, force_artist, force_album
+
+If you have "upgrade_tag" set to a true value (and at least one
+tag-writing module installed) then each podcast's ID3 tag will be
+modified to create a consistent set of fields using information
+provided by the RSS feed. The title will be set to the title of the
+podcast, the album will be set to the title of the channel (e.g. "New
+York Times Front Page"), the artist will be set to the channel author
+(e.g. "The New York Times"), the year will be set to the publication
+date, the genre will be set to "Podcast" and the comment will be set
+to the channel description.
+
+You can change some of these values using these three options:
+
+ force_genre     Change the genre to whatever you specify.
+ force_artist    Change the artist.
+ force_album     Change the album.
+
+For example, the NY Times front page RSS feed specifies "The New York
+Times" as the artist. You can force this to a shorter abbreviation
+with the following modified feed section:
+
+ [NYTimes]
+ description  = The New York Times Front Page
+ url          = http://www.nytimes.com/services/xml/rss/nyt/podcasts/frontpage.xml
+ force_artist = NYT
+
+Note that if you are forced to use ID3v1 tagging (e.g. MP3::Info) then
+you must choose one of the predefined genres; in particular, there is
+no genre named "Podcast." You must force something else, like "Speech"
+instead.
 
 =back
 
 =head1 SEE ALSO
 
 L<MP3::PodcastFetch>,
+L<MP3::PodcastFetch::Feed>,
+L<MP3::PodcastFetch::Feed::Channel>,
+L<MP3::PodcastFetch::Feed::Item>,
+L<MP3::PodcastFetch::TagManger>,
+L<MP3::PodcastFetch::XML::SimpleParser>
 
 =head1 AUTHOR
 

@@ -18,6 +18,46 @@ use Date::Parse;
 
 our $VERSION = '1.00';
 
+=head1 NAME
+
+MP3::PodcastFetch -- Fetch and manage a podcast subscription
+
+=head1 SYNOPSIS
+
+ use MP3::PodcastFetch;
+ my $feed  = MP3::PodcastFetch->new(-base => '/tmp/podcasts',
+                                    -rss  => 'http://www.npr.org/rss/podcast.php?id=500001'
+                                    -rewrite_filename => 1,
+                                    -upgrade_tag => 'auto');
+ $feed->fetch_pods;
+ print "fetched ",$feed->fetched," new podcasts\n";
+ for my $file ($feed->fetched_files) {
+    print $file,"\n";
+ }
+
+=head1 DESCRIPTION
+
+This package provides a convenient and simple way of mirroring the
+podcasts described by an RSS feed into a local directory. It was
+written as the backend for the podcast_fetch.pl script.
+
+To use it, create an MP3::PodcastFetch object with the required
+B<-base> and B<-rss> arguments. The podcasts listed in the RSS
+subscription file located at the B<-rss> URL will be mirrored into one
+or more subdirectories located beneath the path at B<-base>. One
+subdirectory will be created for each channel specified by the
+RSS. Additional new() arguments control optional features of this
+module.
+
+Once the object is created, call its fetch_pods() method to download
+the RSS file, parse it, and mirror the subscribed podcasts locally.
+
+=head1 METHODS
+
+This module implements the following methods:
+
+=cut
+
 BEGIN {
   my @accessors = qw(base subdir rss
 		     max timeout mirror_mode verbose rewrite_filename upgrade_tags
@@ -35,6 +75,168 @@ END
   die $@ if $@;
   }
 }
+
+=head2 Constructor
+
+ $feed = MP3::PodcastFetch->new(-base=>$base,-rss=>$url, [other args])
+
+The new() method creates a new MP3::PodcastFetch object. Options are
+as follows:
+
+=over 4
+
+=item -base
+
+The base directory for all mirrored podcast files,
+e.g. "/var/podcasts". Fetched podcasts files will be stored into
+appropriately-named subdirectories of this location, one subdirectory
+per channel. Additional subdirectory levels can be added using the
+B<-subdirs> argument. This argument is required.
+
+=item -rss
+
+The URL of the RSS feed to subscribe to. This is usually indicated in
+web pages as a red "podcast" or "xml" icon. This argument is required.
+
+=item -verbose
+
+If true, print status messages to STDERR for each podcast file
+attempted.
+
+=item -max
+
+Set the maximum number of podcast episodes to keep.
+
+=item -keep_old
+
+If true, keep old episodes and skip new ones if B<-max> is
+exceeded. The default is to delete old episodes to make room for new
+ones.
+
+=item -timeout
+
+How long (in seconds) to wait before timing out slow servers. Applies
+to both the initial RSS feed fetching and mirroring individual podcast
+episodes.
+
+=item -mirror_mode
+
+One of "exists" or "modified-since". The default, "exists", will cause
+podcast episodes to be skipped if a like-named file already
+exists. "modified-since" performs a more careful comparison with the
+corresponding podcast episode on the remote server. The local file
+will be refreshed if the remote server's version is more recent.
+
+=item -rewrite_filename
+
+If true, cryptic MP3 names will be replaced with long names based on
+podcast episode title.
+
+=item -upgrade_tag
+
+Some podcast files have informative ID3 tags, but many
+don't. Particularly annoying is the genre, which may be given as
+"Speech", "Podcast", or anything else. The upgrade_tag option, if set
+to a non-false value, will attempt to normalize the ID3 tags from the
+information provided by the RSS feed information. Specifically, the
+title will be set to the title of the podcast, the album will be set
+to the title of the channel (e.g. "New York Times Front Page"), the
+artist will be set to the channel author (e.g. "The New York Times"),
+the year will be set to the publication date, the genre will be set to
+"Podcast" and the comment will be set to the channel description. You
+can change some of these values using the options "force_genre,"
+"force_album," and "force_artist."
+
+The value of upgrade_tag is one of:
+
+ false     Don't mess with the ID3 tags
+ id3v1     Upgrade the ID3 version 1 tag
+ id3v2.3   Upgrade the ID3 version 2.3 tag
+ id3v2.4   Upgrade the ID3 version 2.4 tag
+ auto      Choose the best tag available
+
+Depending on what optional Perl ID3 manipulation modules you have
+installed, you may be limited in what level of ID3 tag you can update:
+
+ Audio::TagLib            all versions through 2.4
+ MP3::Tag                 all versions through 2.3
+ MP3::Info                only version 1.0
+
+Choosing "auto" is your best bet. It will dynamically find what Perl
+modules you have installed, and choose the one that provides the most
+recent tag version. Omit this argument, or set it to false, to prevent
+any ID3 tag rewriting from occurring.
+
+=item -force_genre, -force_artist, -force_album
+
+If you have "upgrade_tag" set to a true value (and at least one
+tag-writing module installed) then each podcast's ID3 tag will be
+modified to create a consistent set of fields using information
+provided by the RSS feed. The title will be set to the title of the
+podcast, the album will be set to the title of the channel (e.g. "New
+York Times Front Page"), the artist will be set to the channel author
+(e.g. "The New York Times"), the year will be set to the publication
+date, the genre will be set to "Podcast" and the comment will be set
+to the channel description.
+
+You can change some of these values using these three options:
+
+ -force_genre     Change the genre to whatever you specify.
+ -force_artist    Change the artist.
+ -force_album     Change the album.
+
+Note that if you use ID3v1 tagging (e.g. MP3::Info) then you must
+choose one of the predefined genres; in particular, there is no genre
+named "Podcast." You must force something else, like "Speech" instead.
+
+=item -playlist_handle
+
+A writeable filehandle on a previously-opened .m3u playlist file. The
+playlist file must already have the "#EXTM3U" top line written into
+it. The podcast fetch operation will write an appropriate item
+description for each podcast episode it mirrors.
+
+=item -playlist_base
+
+If you are writing a playlist and mirroring the podcasts to a
+removable medium such as an sdcard for later use with a portable music
+player device, you will need to set this argument to the directory
+path to each podcast file as it will appear to the music player. For
+example, if you mount the medium at /mnt/sdcard and keep podcasts in
+/mnt/sdcard/podcasts, then the B<-base> and B<-playlist_base> options
+might look like this:
+
+  -base          => '/mnt/sdcard/podcasts',
+  -playlist_base => '/podcasts'
+
+For Windows-based devices, you might have to specify a playlist_base
+using Windows filesystem conventions.
+
+=item -subdir
+
+Ordinarily each podcast will be placed in a directory named after its
+channel, directly underneath the directory specified by "base." If
+this boolean is set to a partial path, then additional levels of
+directory will be placed between the base and the channel
+directory. For instance:
+
+ -base    => '/tmp/podcasts',
+ -subdir  => 'News/Daily',
+
+Will place the channel's podcasts in '/tmp/podcasts/News/Daily/channel_name/'
+
+=item -force_genre, -force_artist, -force_album
+
+If B<-upgrade_tag> is set to true, then you can use these options to
+force the genre, artist and/or album to desired hard-coded values. By
+default, genre will be set to "Podcast", and artist and album will be
+dynamically determined from information provided by the RSS feed, such
+that the channel name becomes the album and the podcast author becomes
+the artist.
+
+=back
+
+=cut
 
 # arguments:
 # -base             => base directory for podcasts, e.g. /var/podcasts
@@ -71,18 +273,66 @@ sub new {
   $self->force_artist($args{-force_artist}           );
   $self->force_album($args{-force_artist}            );
   $self->{tabs} = 1;
+  $self->{files_fetched} = [];
   $self;
 }
 
-sub fetched { shift->{stats}{fetched} ||= 0 }
-sub errors  { shift->{stats}{error}   ||= 0 }
-sub deleted { shift->{stats}{deleted} ||= 0 }
-sub skipped { shift->{stats}{skipped} ||= 0 }
+=head2 Read/write accessors
 
-sub bump_fetched {shift->{stats}{fetched} += (@_ ? shift : 1)}
-sub bump_error  {shift->{stats}{error} += (@_ ? shift : 1)}
-sub bump_deleted {shift->{stats}{deleted} += (@_ ? shift : 1)}
-sub bump_skipped {shift->{stats}{skipped} += (@_ ? shift : 1)}
+The following are read/write accessors (get and/or set the
+corresponding option). Each takes the form:
+
+ $old_value = $feed->accessor([$new_value])
+
+Where $new_value is optional.
+
+=over 4
+
+=item $feed->base
+
+=item $feed->subdir
+
+=item $feed->rss
+
+=item $feed->timeout
+
+=item $feed->mirror_mode
+
+=item $feed->verbose
+
+=item $feed->rewrite_filename
+
+=item $feed->upgrade_tags
+
+=item $feed->keep_old
+
+=item $feed->playlist_handle
+
+=item $feed->playlist_base
+
+=item $feed->force_genre
+
+=item $feed->force_artist
+
+=item $feed->force_album
+
+=back
+
+=head2 Common methods
+
+The following methods are commonly used in end-user scripts:
+
+=over 4
+
+=item $feed->fetch_pods
+
+Mirror the subscribed podcast episodes into the base directory
+specified in new(). After calling it, use the fetched() and errors()
+methods to find out how many podcasts were successfully mirrored and
+whether there were any errors. Use the fetched_files() method to get
+the names of the newly fetched podcasts.
+
+=cut
 
 sub fetch_pods {
   my $self = shift;
@@ -92,7 +342,60 @@ sub fetch_pods {
   my @channels = $parser->read_feed;
   $self->log("Couldn't read RSS for $url: ",$parser->errstr) unless @channels;
   $self->update($_) foreach @channels;
+  1;
 }
+
+=item @files = $feed->fetched_files
+
+This method will return the complete paths to each of the podcast
+episodes successfully fetched by the proceeding call to fetch_pods().
+
+=cut
+
+sub fetched_files {
+  return @{shift->{files_fetched}}
+}
+
+=item $feed->fetched
+
+The number of episodes fetched/refreshed.
+
+=item $feed->skipped
+
+The number of episodes skipped.
+
+=item $feed->deleted
+
+The number of episodes deleted because they are either no longer
+mentioned in the subscription file or exceed the per-feed limit.
+
+=item $feed->errors
+
+The number of episodes not fetched because of an error.
+
+=back
+
+=cut
+
+sub fetched { shift->{stats}{fetched} ||= 0 }
+sub errors  { shift->{stats}{error}   ||= 0 }
+sub deleted { shift->{stats}{deleted} ||= 0 }
+sub skipped { shift->{stats}{skipped} ||= 0 }
+
+=head2 Internal Methods
+
+These methods are intended for internal use cut can be overridden in
+subclasses in order to change their behavior.
+
+=over 4
+
+=item $feed->update($channel)
+
+Update all episodes contained in the indicated
+MP3::PodcastFetch::Feed::Channel object (this object is generated by
+podcast_fetch() in the course of downloading and parsing the RSS file.
+
+=cut
 
 sub update {
   my $self    = shift;
@@ -114,7 +417,32 @@ sub update {
     $self->mirror($dir,\@items,$channel);
     $self->{tabs}--; # for formatting
   }
+  1;
 }
+
+=item $feed->bump_fetched($value)
+=item $feed->bump_error($value)
+=item $feed->bump_deleted($value)
+=item $feed->bump_skipped($value)
+
+Increase the fetched, error, deleted and skipped counters by $value,
+or by 1 if not specified.
+
+=cut
+
+sub bump_fetched {shift->{stats}{fetched} += (@_ ? shift : 1)}
+sub bump_error  {shift->{stats}{error} += (@_ ? shift : 1)}
+sub bump_deleted {shift->{stats}{deleted} += (@_ ? shift : 1)}
+sub bump_skipped {shift->{stats}{skipped} += (@_ ? shift : 1)}
+
+=item $feed->mirror($dir,$items,$channel)
+
+Mirror a list of podcast episodes into the indicated directory. $dir
+is the absolute path to the directory to mirror the episodes into,
+$items is an array ref of MP3::PodcastFetch::Feed::Item objects, and
+$channel is a MP3::PodcastFetch::Feed::Channel object.
+
+=cut
 
 sub mirror {
   my $self = shift;
@@ -164,6 +492,18 @@ sub mirror {
   }
 }
 
+=item $feed->mirror_url($ua,$url,$filename,$item,$channel)
+
+Fetch a single podcast episode. Arguments are:
+
+ $ua        An LWP::UserAgent object
+ $url       The URL of the podcast episode to mirror
+ $filename  The local filename for the episode (may already exist)
+ $item      The corresponding MP3::PodcastFetch::Feed::Item object
+ $channel   The corresponding MP3::PodcastFetch::Feed::Channel object
+
+=cut
+
 sub mirror_url {
   my $self = shift;
   my ($ua,$url,$filename,$item,$channel) = @_;
@@ -205,6 +545,7 @@ sub mirror_url {
 	  $self->fix_tags($filename,$item,$channel);
 	  $self->write_playlist($filename,$item,$channel);
 	  $self->bump_fetched;
+	  $self->add_file($filename,$item,$channel);
 	  $self->log("$title: $size bytes fetched");
       }
       return;
@@ -213,6 +554,13 @@ sub mirror_url {
   $self->log("$title: unrecognized response code ",$response->code);
   $self->bump_error;
 }
+
+=item $feed->log(@msg)
+
+Log the strings provided in @msg to STDERR. Logging is controlled by
+the -verbose setting.
+
+=cut
 
 sub log {
   my $self = shift;
@@ -224,6 +572,13 @@ sub log {
   warn "\t"x$tabs,@msg,"\n";
 }
 
+=item $feed->log_error(@msg)
+
+Log the errors provided in @msg to STDERR. Logging occurs even if
+-verbose is false.
+
+=cut
+
 sub log_error {
   my $self = shift;
   my @msg  = @_;
@@ -232,6 +587,27 @@ sub log_error {
   chomp @msg;
   warn "\t"x$tabs,"*ERROR* ",@msg,"\n";
 }
+
+=item $feed->add_file($path)
+
+Record that we successfully mirrored the podcast episode indicated by $path.
+
+=cut
+
+sub add_file {
+  my $self = shift;
+  my ($filename,$item,$channel) = @_;
+  my $dir          = $self->generate_directory($channel);
+  push @{$self->{files_fetched}},File::Spec->catfile($dir,$filename);
+}
+
+=item $feed->write_playlist($filename,$item,$channel)
+
+Write an entry into the current playlist indicating that $filename is
+ready to be listened to. $item and $channel are the
+MP3::PodcastFetch::Feed::Item and Channel objects respectively.
+
+=cut
 
 sub write_playlist {
   my $self = shift;
@@ -258,6 +634,14 @@ sub write_playlist {
   print $playlist "#EXTINF:$duration,$album: $title\r\n";
   print $playlist $path,"\r\n";
 }
+
+=item $feed->fix_tags($filename,$item,$channel)
+
+Fix the ID3 tags in the newly-downloaded podcast episode indicated by
+$filename. $item and $channel are the MP3::PodcastFetch::Feed::Item
+and Channel objects respectively.
+
+=cut
 
 sub fix_tags {
   my $self = shift;
@@ -292,6 +676,20 @@ sub fix_tags {
   utime $mtime,$mtime,$filename;  # put the mtime back the way it was
 }
 
+=item $duration = $feed->get_duration($filename,$item)
+
+This method is used to provide extended information for .m3u
+playlists.
+
+Get the duration, in seconds, of the podcast episode given by
+$filename. If an ID3 tagging library is available, the duration will
+be calculated from the MP3 file directory. Otherwise, it will fall
+back to using the duration specified by the RSS feed's
+MP3::PodcastFetch::Feed::Item object. Many RSS feeds do not specify
+the duration, in which case get_duration() will return 0.
+
+=cut
+
 sub get_duration {
   my $self     = shift;
   my ($filename,$item) = @_;
@@ -300,6 +698,14 @@ sub get_duration {
   $duration    = $item->duration || 0 unless defined $duration;
   return $duration;
 }
+
+=item $filename = $feed->make_filename($url,$title)
+
+Create a filename for the episode located at $url based on its $title
+or the last component of the URL, depending on -rewrite_filename
+argument provided to new().
+
+=cut
 
 sub make_filename {
   my $self = shift;
@@ -313,10 +719,21 @@ sub make_filename {
   return basename($url);
 }
 
+=item $path = $feed->generate_directory($channel)
+
+Create a directory for the channel specified by the provided
+MP3::PodcastFetch::Feed::Channel object, respecting the values of
+-base and -subdir. The path is created in an OS-independent way, using
+File::Spec->catfile(). The directory will be created if it doesn't
+already exist. If it already exists and is not writeable, the method
+errors out.
+
+=cut
+
 sub generate_directory {
   my $self    = shift;
   my $channel = shift;
-  my $dir     = File::Spec->catfile($self->base,$self->subdir,$self->channel_dir($channel));
+  my $dir     = File::Spec->catfile($self->base,$self->subdir||'',$self->channel_dir($channel));
 
   # create the thing
   unless (-d $dir) {
@@ -327,22 +744,62 @@ sub generate_directory {
   return $dir;
 }
 
+=item $dirname = $feed->channel_dir($channel)
+
+Generate a directory named based on the provided channel object's title.
+
+=cut
+
 sub channel_dir {
   my $self    = shift;
   my $channel = shift;
   return $self->safestr($channel->title); # potential bug here -- what if two podcasts have same title?
 }
 
+=item $safe_str = $feed->safe_str($unsafe_str)
+
+This method generates OS-safe path components from channel and podcast
+titles. It replaces whitespace and other odd characters with
+underscores.
+
+=back
+
+=cut
+
 sub safestr {
   my $self = shift;
   my $str  = shift;
+
   # turn runs of spaces into _ characters
   $str =~ tr/ /_/s;
 
   # get rid of odd characters
-  $str =~ tr/a-zA-Z0-9_+^.%$@=,-//cd;
+  $str =~ tr/a-zA-Z0-9_+^.%$@=,\\-//cd;
 
   return $str;
 }
 
 1;
+
+__END__
+
+=head1 SEE ALSO
+
+L<podcast_fetch.pl>,
+L<MP3::PodcastFetch::Feed>,
+L<MP3::PodcastFetch::Feed::Channel>,
+L<MP3::PodcastFetch::Feed::Item>,
+L<MP3::PodcastFetch::TagManger>,
+L<MP3::PodcastFetch::XML::SimpleParser>
+
+=head1 AUTHOR
+
+Lincoln Stein E<lt>lstein@cshl.orgE<gt>.
+
+Copyright (c) 2006 Lincoln Stein
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.  See DISCLAIMER.txt for
+disclaimers of warranty.
+
+=cut
