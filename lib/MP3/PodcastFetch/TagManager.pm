@@ -1,5 +1,5 @@
 package MP3::PodcastFetch::TagManager;
-# $Id: TagManager.pm,v 1.3 2006/12/31 23:39:45 lstein Exp $
+# $Id: TagManager.pm,v 1.4 2007/01/02 00:56:55 lstein Exp $
 
 # Handle various differences between ID3 tag libraries
 
@@ -186,8 +186,9 @@ Return a coderef to the appropriate function for updating the tag.
 =cut
 
 sub load_tag_fixer_code {
-  my $self = shift;
+  my $self         = shift;
   my $upgrade_type = shift;
+  $self->upgrade_tags($upgrade_type);
   return $self->load_mp3_tag_lib   if lc $upgrade_type eq 'id3v1' or lc $upgrade_type eq 'id3v2.3';
   return $self->load_audio_tag_lib if lc $upgrade_type eq 'id3v2.4';
   return $self->load_audio_tag_lib || $self->load_mp3_tag_lib 
@@ -235,6 +236,13 @@ requested level.
 =back
 
 =cut
+
+sub upgrade_tags {
+    my $self = shift;
+    my $d    = $self->{upgrade_type};
+    $self->{upgrade_type} = shift if @_;
+    $d;
+}
 
 sub upgrade_to_ID3v24 {
   my ($filename,$tags) = @_;
