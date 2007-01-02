@@ -6,7 +6,6 @@
 use strict;
 use warnings;
 use Module::Build;
-use Bio::Root::IO;
 use File::Path 'rmtree';
 use FindBin '$Bin';
 use File::Spec;
