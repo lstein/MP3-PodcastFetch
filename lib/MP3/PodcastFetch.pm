@@ -39,7 +39,7 @@ MP3::PodcastFetch -- Fetch and manage a podcast subscription
 
 This package provides a convenient and simple way of mirroring the
 podcasts described by an RSS feed into a local directory. It was
-written as the backend for the podcast_fetch.pl script.
+written as the backend for the fetch_pods.pl script.
 
 To use it, create an MP3::PodcastFetch object with the required
 B<-base> and B<-rss> arguments. The podcasts listed in the RSS

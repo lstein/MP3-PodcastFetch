@@ -1,3 +1,22 @@
+		 MP3::PodcastFetch and fetch_pods.pl
+
+Author: Lincoln D. Stein <lstein@cshl.edu>
+First Release Date: January 1, 2007
+
+Description
+-----------
+
+Fetch_pods.pl is a Perl script to fetch and maintain a directory of
+podcast subscriptions. Information about which podcasts to fetch are
+stored in a configuration file. You control how many podcast files to
+keep, where to keep them, whether to rationalize their ID3 tags, and
+whether to delete older files. This script will also create playlists
+for recently-fetched podcasts.
+
+MP3::PodcastFetch is a set of Perl modules used for the backend of
+this script. You can use this library to write your own Podcast
+maintenance system.
+
 Installation
 ------------
 
@@ -43,6 +62,6 @@ process, such as how to specify a non-standard installation location.
 
 The build process will install the command fetch_pods.pl somewhere on
 your executable path. Please run the command "perldoc fetch_pods.pl"
-to get the rest of the documentation.
-
-
+to learn about how to configure and run the fetch_pods.pl script. Use
+"perldoc MP3::PodcastFetch" to learn more about the underlying Perl
+library.

@@ -62,6 +62,9 @@ for the config file are:
   /etc/fetchpods.conf
   /path/to/this/binary/../etc/fetchpods.conf
   /path/to/this/binary/../conf/fetchpods.conf  # for local installations
+
+Run the command "perldoc fetch_pods.pl" for full usage information.
+
 END
 }
 
@@ -250,7 +253,10 @@ configuration file in the following locations:
   /path/to/this/binary/../etc/fetchpods.conf
   /path/to/this/binary/../conf/fetchpods.conf
 
-It will stop and process the first configuration file it finds.
+The script will stop and process the first configuration file it
+finds. Note that when you installed this script, it created a default
+fetchpods.conf in /etc/fetchpods.conf. You may want to delete this
+file.
 
 To run from a cron job once daily at 1 am, enter something like this:
 
