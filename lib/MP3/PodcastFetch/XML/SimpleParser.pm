@@ -161,6 +161,7 @@ sub new {
 				 end_h         => [ sub { $self->tag_stops(@_)  },'tagname' ],
 				 text_h        => [ sub { $self->char_data(@_)  },'dtext' ]);
   $parser->xml_mode(1);
+  eval { $parser->utf8_mode(1); };
   $self->parser($parser);
   return $self;
 }
