@@ -1,6 +1,6 @@
 ---
 name: MP3-PodcastFetch
-version: 1.00
+version: 1.01
 author:
   - Lincoln Stein E<lt>lstein@cshl.orgE<gt>.
 abstract: 'This is a library of tools for managing podcast subscriptions. It comes with a command-line tool, fetch_pods.pl, that can run under Cron to keep a directory of subscribed Podcasts feeds up to date.'
@@ -16,7 +16,7 @@ requires:
 provides:
   MP3::PodcastFetch:
     file: lib/MP3/PodcastFetch.pm
-    version: 1.00
+    version: 1.01
   MP3::PodcastFetch::Feed:
     file: lib/MP3/PodcastFetch/Feed.pm
   MP3::PodcastFetch::Feed::Channel:
