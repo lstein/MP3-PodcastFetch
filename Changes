@@ -1,0 +1,8 @@
+Version 1.02: Wed Jan 31 16:26:31 CET 2007
+	- Added a missing duration() method to
+	MP3::PodcastFetch::Feed::Channel to prevent crashing on RSS
+	feeds with an <itunes:duration> tag.
+
+Version 1.01: January 2, 2007
+	- First released version.
+

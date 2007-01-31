@@ -54,6 +54,7 @@ struct (
 					       pubDate     => '$',
 					       author      => '$',
 					       link        => '$',
+					       duration    => '$',
 					      }
        );
 
