@@ -491,8 +491,11 @@ sub update {
 }
 
 =item $feed->bump_fetched($value)
+
 =item $feed->bump_error($value)
+
 =item $feed->bump_deleted($value)
+
 =item $feed->bump_skipped($value)
 
 Increase the fetched, error, deleted and skipped counters by $value,
