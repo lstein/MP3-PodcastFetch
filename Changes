@@ -1,3 +1,12 @@
+Version 1.05: 
+       - public source moved to https://github.com/lstein/MP3-PodcastFetch
+       - add patch for adding ability to override channel directories,
+          per https://rt.cpan.org/Public/Bug/Display.html?id=70873
+       - add patch for url-decoding downloaded files, as per RT 
+	  https://rt.cpan.org/Public/Bug/Display.html?id=56306
+       - add patch to fix perldoc rendering as per RT 
+          https://rt.cpan.org/Public/Bug/Display.html?id=70872
+   
 Version 1.04:
 	- Patch from Igor Okunev to add callbacks that execute right after
 	a file is created or deleted.
