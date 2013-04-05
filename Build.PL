@@ -5,7 +5,6 @@ my $build = Module::Build->new(
 			       module_name => 'MP3::PodcastFetch',
 			       license     => 'perl',
 			       requires => {
-					    perl               => '5.8',
 					    LWP                => '5.8',
 					    'Date::Parse'      => '2.20',
 					    'HTML::Parser'     => '3.50',

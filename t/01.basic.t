@@ -9,6 +9,7 @@ use warnings;
 use FindBin '$Bin';
 use File::Spec;
 use File::Temp qw(tempdir);
+use lib "$Bin/../lib";
 
 my $DATA_DIR = File::Spec->catdir( $Bin, 'data' );
 my $RSS_FILE = File::Spec->catfile( $DATA_DIR, 'test.xml' );
