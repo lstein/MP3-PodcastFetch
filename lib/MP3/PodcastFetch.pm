@@ -18,7 +18,7 @@ use Digest::MD5 qw(md5_hex);
 use Date::Parse;
 use Cwd;
 
-our $VERSION = '1.05_01';
+our $VERSION = '1.05';
 
 =head1 NAME
 
