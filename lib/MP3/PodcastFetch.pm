@@ -59,10 +59,11 @@ This module implements the following methods:
 =cut
 
 BEGIN {
-  my @accessors = qw(base subdir rss
-		     max timeout mirror_mode verbose rewrite_filename upgrade_tags
-		     keep_old playlist_handle playlist_base force_genre force_artist
-		     force_album);
+  my @accessors = qw(base subdir override_channel_dir rss
+ 		     max timeout mirror_mode verbose rewrite_filename upgrade_tags use_pub_date
+ 		     keep_old playlist_handle playlist_base force_genre force_artist
+ 		     force_album fetch_callback delete_callback env_proxy);
+
   for my $accessor (@accessors) {
 eval <<END;
 sub $accessor {
@@ -92,6 +93,11 @@ e.g. "/var/podcasts". Fetched podcasts files will be stored into
 appropriately-named subdirectories of this location, one subdirectory
 per channel. Additional subdirectory levels can be added using the
 B<-subdirs> argument. This argument is required.
+
+=item -override_channel_dir
+
+Default is to use directory named after a channel title.  Specify
+another directory instead.
 
 =item -rss
 
@@ -241,6 +247,7 @@ the artist.
 # arguments:
 # -base             => base directory for podcasts, e.g. /var/podcasts
 # -subdir           => subdirectory for this podcast, e.g. music
+# -override_channel_dir            => directory to use instead of channel title
 # -rss              => url of the RSS feed to read
 # -max              => maximum number of episodes to keep
 # -timeout          => timeout for URL requests
@@ -259,6 +266,7 @@ sub new {
   my $self = bless {},ref $class || $class;
   $self->base($args{-base}       || '/tmp/podcasts');
   $self->subdir($args{-subdir});
+  $self->override_channel_dir($args{-override_channel_dir});
   $self->rss($args{-rss}         || croak 'please provide -rss argument');
   $self->max($args{-max}                             );
   $self->timeout($args{-timeout} || 30               );
@@ -291,6 +299,8 @@ Where $new_value is optional.
 =item $feed->base
 
 =item $feed->subdir
+
+=item $feed->override_channel_dir
 
 =item $feed->rss
 
@@ -421,8 +431,11 @@ sub update {
 }
 
 =item $feed->bump_fetched($value)
+
 =item $feed->bump_error($value)
+
 =item $feed->bump_deleted($value)
+
 =item $feed->bump_skipped($value)
 
 Increase the fetched, error, deleted and skipped counters by $value,
@@ -746,14 +759,19 @@ sub generate_directory {
 
 =item $dirname = $feed->channel_dir($channel)
 
-Generate a directory named based on the provided channel object's title.
+Generate a directory named based on the provided channel object's title,
+unless it is overriden by B<-override_channel_dir> value.
 
 =cut
 
 sub channel_dir {
   my $self    = shift;
   my $channel = shift;
-  return $self->safestr($channel->title); # potential bug here -- what if two podcasts have same title?
+
+  my $dir = $self->override_channel_dir || $channel->title;
+
+  return
+    $self->safestr( $dir ); # potential bug here -- what if two podcasts have same title?
 }
 
 =item $safe_str = $feed->safe_str($unsafe_str)

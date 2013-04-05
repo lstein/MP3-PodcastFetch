@@ -106,6 +106,7 @@ for my $podcast (@sections) {
   my $url               = $cfg->val($podcast=>'url');
   my $limit             = $cfg->val($podcast=>'limit')    || 'none';
   my $subdir            = $cfg->val($podcast=>'subdir')   || 0;
+  my $override_channel  = $cfg->val($podcast=>'override_channel_dir');
   my $keep_old          = $cfg->val($podcast=>'keep_old') || 0;
   my $rewrite           = $cfg->val($podcast=>'rewrite_filename') || 0;
   my $upgrade           = $cfg->val($podcast=>'upgrade_tag') || 0;
@@ -126,6 +127,7 @@ for my $podcast (@sections) {
   my $feed   = MP3::PodcastFetch->new(
                                  -base              => $base,
                                  -subdir            => $subdirs ? $subdir : '',
+                                 -override_channel_dir => $override_channel,
 				 -rss               => $url,
 				 -max               => $limit,
 				 -mirror_mode       => $mode,
@@ -346,6 +348,11 @@ be overidden in the feed sections.
 Set the base directory for the downloaded podcasts. This option must
 be present. The shortcuts ~, ~user and $ENVIRONMENT_VARIABLE are all
 recognized.
+
+=item override_channel_dir
+
+Use a directory other than a channel title which is the default.  This
+allows to put multiple channel feeds in a single directory.
 
 =item verbose
 
