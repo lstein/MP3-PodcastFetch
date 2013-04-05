@@ -65,3 +65,11 @@ your executable path. Please run the command "perldoc fetch_pods.pl"
 to learn about how to configure and run the fetch_pods.pl script. Use
 "perldoc MP3::PodcastFetch" to learn more about the underlying Perl
 library.
+
+Contributing
+------------
+
+The source code for this module is maintained on GitHub at
+https://github.com/lstein/MP3-PodcastFetch. You are encouraged to
+check out the latest improvements to the source code and to contribute
+your own ideas and features.

@@ -65,6 +65,7 @@ BEGIN {
 		     max timeout mirror_mode verbose rewrite_filename upgrade_tags use_pub_date
 		     keep_old playlist_handle playlist_base force_genre force_artist
 		     force_album fetch_callback delete_callback env_proxy);
+
   for my $accessor (@accessors) {
 eval <<END;
 sub $accessor {
