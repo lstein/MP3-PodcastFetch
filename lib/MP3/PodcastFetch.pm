@@ -8,6 +8,7 @@ use MP3::PodcastFetch::TagManager;
 
 use LWP::UserAgent;
 use HTTP::Status;
+use URI::Escape;
 
 use File::Spec;
 use File::Basename 'basename';
@@ -17,7 +18,7 @@ use Digest::MD5 qw(md5_hex);
 use Date::Parse;
 use Cwd;
 
-our $VERSION = '1.04';
+our $VERSION = '1.05_01';
 
 =head1 NAME
 
@@ -827,7 +828,7 @@ sub make_filename {
     $name   .= ".$extension" if defined $extension;
     return $name;
   } else {
-  	return basename($url);
+  	return uri_unescape( basename($url) );
   }
 }
 

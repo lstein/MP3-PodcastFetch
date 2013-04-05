@@ -10,6 +10,7 @@ my $build = Module::Build->new(
 					    'Date::Parse'      => '2.20',
 					    'HTML::Parser'     => '3.50',
 					    'Config::IniFiles' => '2.00',
+					    'URI::Escape'      => 0,
 					    },
 			       PL_files => {
 					    'bin/fetch_pods.PLS' => 'bin/fetch_pods.pl',

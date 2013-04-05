@@ -25,5 +25,14 @@
    <itunes:duration>0:00:03</itunes:duration>
    <enclosure url="$PATH/test2.mp3" type="audio/mpeg"/>
   </item>
+  <item>
+   <title>Test File 3</title>
+   <description>Test File 3 Description</description>
+   <pubDate>Sun Dec 31 15:59:22 EST 2006</pubDate>
+   <link>http://www.perl.org/item/3</link>
+   <guid>http://www.perl.org/item/3</guid>
+   <itunes:duration>0:00:03</itunes:duration>
+   <enclosure url="$PATH/test%203.mp3" type="audio/mpeg"/>
+  </item>
  </channel>
 </rss>
