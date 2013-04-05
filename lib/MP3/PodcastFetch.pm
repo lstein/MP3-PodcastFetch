@@ -13,10 +13,11 @@ use File::Spec;
 use File::Basename 'basename';
 use File::Path 'mkpath';
 use IO::Dir;
-
+use Digest::MD5 qw(md5_hex);
 use Date::Parse;
+use Cwd;
 
-our $VERSION = '1.02';
+our $VERSION = '1.04';
 
 =head1 NAME
 
@@ -60,9 +61,9 @@ This module implements the following methods:
 
 BEGIN {
   my @accessors = qw(base subdir rss
-		     max timeout mirror_mode verbose rewrite_filename upgrade_tags
+		     max timeout mirror_mode verbose rewrite_filename upgrade_tags use_pub_date
 		     keep_old playlist_handle playlist_base force_genre force_artist
-		     force_album);
+		     force_album fetch_callback delete_callback env_proxy);
   for my $accessor (@accessors) {
 eval <<END;
 sub $accessor {
@@ -102,6 +103,10 @@ web pages as a red "podcast" or "xml" icon. This argument is required.
 
 If true, print status messages to STDERR for each podcast file
 attempted.
+
+=item -env_proxy
+
+If true, load proxy settings from *_proxy environment variables.
 
 =item -max
 
@@ -234,6 +239,35 @@ dynamically determined from information provided by the RSS feed, such
 that the channel name becomes the album and the podcast author becomes
 the artist.
 
+=item -use_pub_date
+
+If B<-use_pub_date> is set to true, then podcast files will have their
+modification times set to match the publication time specified in the
+RSS feed. Otherwise they will take retain the modification time they
+carry on the site they are downloaded from.
+
+=item -fetch_callback
+
+If you provide a coderef to B<-fetch_callback> this routine will be
+invoked on every file fetched immediately after the file is
+created. It will be called with two arguments corresponding to the
+MP3::PodcastFetch object, and the complete path to the fetched file:
+
+   my $callback = sub {
+       my ($feed,$filepath) = @_;
+       print STDERR "$filepath successfully fetched\n";
+   }
+
+   $feed = MP3::PodcastFetch->new(-base           => $base,
+                                  -rss            => $url,
+                                  -fetch_callback => $callback);
+
+
+=item -delete_callback
+
+Similar to B<-fetch_callback> except that the passed coderef is called
+on every deleted file immediately after the file is deleted.
+
 =back
 
 =cut
@@ -252,6 +286,12 @@ the artist.
 # -playlist_handle  => file handle for playlist
 # -playlist_base    => file system base to use for the playlists
 # -verbose          => print status reports
+# -env_proxy	    => load proxy settings from environment variables
+# -use_pub_date     => set the modtime of the downloaded podcast file to the RSS item's pubdate
+# -fetch_callback	=> subroutine to run for every fetched files
+# -delete_callback	=> subroutine to run for every deleted files
+#
+
 
 sub new {
   my $class = shift;
@@ -264,6 +304,7 @@ sub new {
   $self->timeout($args{-timeout} || 30               );
   $self->mirror_mode($args{-mirror_mode} || 'exists' );
   $self->verbose($args{-verbose}                     );
+  $self->env_proxy($args{-env_proxy}                 );
   $self->rewrite_filename($args{-rewrite_filename}   );
   $self->upgrade_tags($args{-upgrade_tag}            );
   $self->keep_old($args{-keep_old}                   );
@@ -272,8 +313,13 @@ sub new {
   $self->force_genre($args{-force_genre}             );
   $self->force_artist($args{-force_artist}           );
   $self->force_album($args{-force_artist}            );
+  $self->fetch_callback( $args{-fetch_callback} || 'none' );
+  $self->delete_callback( $args{-delete_callback} || 'none' );
+  $self->force_album($args{-force_artist}            );
+  $self->use_pub_date($args{-use_pub_date}           );
   $self->{tabs} = 1;
   $self->{files_fetched} = [];
+  $self->{files_deleted} = [];
   $self;
 }
 
@@ -299,6 +345,8 @@ Where $new_value is optional.
 =item $feed->mirror_mode
 
 =item $feed->verbose
+
+=item $feed->env_proxy
 
 =item $feed->rewrite_filename
 
@@ -339,6 +387,7 @@ sub fetch_pods {
   my $url  = $self->rss or croak 'No URL!';
   my $parser = MP3::PodcastFetch::Feed->new($url) or croak "Couldn't create parser";
   $parser->timeout($self->timeout);
+  $parser->env_proxy($self->env_proxy);
   my @channels = $parser->read_feed;
   $self->log("Couldn't read RSS for $url: ",$parser->errstr) unless @channels;
   $self->update($_) foreach @channels;
@@ -354,6 +403,17 @@ episodes successfully fetched by the proceeding call to fetch_pods().
 
 sub fetched_files {
   return @{shift->{files_fetched}}
+}
+
+=item @files = $feed->deleted_files
+
+This method will return the complete paths to each of the podcast
+episodes successfully deleted by the proceeding call to fetch_pods().
+
+=cut
+
+sub deleted_files {
+  return @{shift->{files_deleted}}
 }
 
 =item $feed->fetched
@@ -450,6 +510,7 @@ sub mirror {
 
   # generate a directory listing of the directory
   my %current_files;
+  my $curdir = getcwd();
   chdir($dir) or croak "Couldn't changedir to $dir: $!";
   my $d = IO::Dir->new('.') or croak "Couldn't open directory $dir for reading: $!";
   while (my $file = $d->read) {
@@ -479,17 +540,26 @@ sub mirror {
     }
   }
   else {
-    my $gone   = unlink @goners;
-    $self->bump_deleted($gone);
-    $self->log("$_: deleted") foreach @goners;
+  	foreach my $fn ( @goners ) {
+    	my $gone = unlink $fn;
+    	$self->bump_deleted($gone);
+	  	if ( ref $self->delete_callback eq 'CODE' ) {
+			&{$self->delete_callback}( $self, $fn );
+		}
+    	$self->log("$fn: deleted");
+		push @{$self->{files_deleted}}, $fn;
+  	}
   }
 
   # use LWP to mirror the remainder
   my $ua = LWP::UserAgent->new;
+  $ua->env_proxy if $self->env_proxy;
   $ua->timeout($self->timeout);
   for my $basename (sort keys %to_fetch) {
     $self->mirror_url($ua,$to_fetch{$basename}{url},$basename,$to_fetch{$basename}{item},$channel);
   }
+
+  chdir ($curdir);
 }
 
 =item $feed->mirror_url($ua,$url,$filename,$item,$channel)
@@ -546,6 +616,17 @@ sub mirror_url {
 	  $self->write_playlist($filename,$item,$channel);
 	  $self->bump_fetched;
 	  $self->add_file($filename,$item,$channel);
+
+		if ( $mode eq 'exists' ) {
+	 		#
+			# change time stamp to pub date ( for dinamic url )
+			#
+			my $pubdate = $item->pubDate;
+		    my $secs    = $pubdate ? str2time($pubdate) : 0;
+			if ( $secs ) {
+				utime $secs, $secs, $filename;
+			}
+		}
 	  $self->log("$title: $size bytes fetched");
       }
       return;
@@ -598,7 +679,12 @@ sub add_file {
   my $self = shift;
   my ($filename,$item,$channel) = @_;
   my $dir          = $self->generate_directory($channel);
-  push @{$self->{files_fetched}},File::Spec->catfile($dir,$filename);
+  my $fn = File::Spec->catfile($dir,$filename);
+  push @{$self->{files_fetched}},$fn;
+
+	if ( ref $self->fetch_callback eq 'CODE' ) {
+			&{$self->fetch_callback}( $self, $fn );
+	}
 }
 
 =item $feed->write_playlist($filename,$item,$channel)
@@ -646,34 +732,40 @@ and Channel objects respectively.
 sub fix_tags {
   my $self = shift;
   my ($filename,$item,$channel) = @_;
-  return if $self->upgrade_tags eq 'no';
 
   my $mtime   = (stat($filename))[9];
   my $pubdate = $item->pubDate;
   my $secs    = $pubdate ? str2time($pubdate) : $mtime;
-  my $year    = (localtime($secs))[5]+1900;
-  my $album   = $self->force_album  || $channel->title;
-  my $artist  = $self->force_artist || $channel->author;
-  my $comment = $channel->description;
-  $comment   .= " " if $comment;
-  $comment   .= "[Fetched with podcast_fetch.pl (c) 2006 Lincoln D. Stein]";
-  my $genre   = $self->force_genre  || 'Podcast';
 
-  eval {
-    MP3::PodcastFetch::TagManager->new()->fix_tags($filename,
-						   {title  => $item->title,
-						    genre  => $genre,
-						    year   => $year,
-						    artist => $artist,
-						    album  => $album,
-						    comment=> $comment,
-						   },
-						   $self->upgrade_tags,
-						  );
-  };
+  if ($self->upgrade_tags ne 'no') {
+      my $year    = (localtime($secs))[5]+1900;
+      my $album   = $self->force_album  || $channel->title;
+      my $artist  = $self->force_artist || $channel->author;
+      my $comment = $channel->description;
+      $comment   .= " " if $comment;
+      $comment   .= "[Fetched with podcast_fetch.pl (c) 2006 Lincoln D. Stein]";
+      my $genre   = $self->force_genre  || 'Podcast';
 
-  $self->log_error($@) if $@;
-  utime $mtime,$mtime,$filename;  # put the mtime back the way it was
+      eval {
+	  MP3::PodcastFetch::TagManager->new()->fix_tags($filename,
+							 {title  => $item->title,
+							  genre  => $genre,
+							  year   => $year,
+							  artist => $artist,
+							  album  => $album,
+							  comment=> $comment,
+							 },
+							 $self->upgrade_tags,
+	      );
+      };
+      $self->log_error($@) if $@;
+  }
+
+  if ($self->use_pub_date) {
+      utime $secs,$secs,$filename;     # make the modification time match the pubtime
+  } else {
+      utime $mtime,$mtime,$filename;   # keep the modification times mirroring the web site
+  }
 }
 
 =item $duration = $feed->get_duration($filename,$item)
@@ -710,13 +802,24 @@ argument provided to new().
 sub make_filename {
   my $self = shift;
   my ($url,$title) = @_;
-  if ($self->rewrite_filename) {
+
+  if ($self->rewrite_filename eq 'md5' ) {
+  	my $md5 = md5_hex( $url );
+	$url =~ s#([^\?]+).*#$1#;
+    my ($extension) = $url =~ /\.(\w+)$/;
+	if ( defined $extension ) {
+		return $self->safestr($md5) . ".$extension";
+	} else {
+		return $self->safestr($md5);
+	}
+  } elsif ($self->rewrite_filename) {
     my ($extension) = $url =~ /\.(\w+)$/;
     my $name = $self->safestr($title);
     $name   .= ".$extension" if defined $extension;
     return $name;
+  } else {
+  	return basename($url);
   }
-  return basename($url);
 }
 
 =item $path = $feed->generate_directory($channel)

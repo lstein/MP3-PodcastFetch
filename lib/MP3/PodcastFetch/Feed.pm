@@ -103,6 +103,20 @@ sub timeout {
   $d;
 }
 
+=item $env_proxy = $feed->env_proxy([$env_proxy])
+
+Get or set the proxy usage for the RSS XML file fetch operation. The
+default is without proxy,
+
+=cut
+
+sub env_proxy {
+  my $self	= shift;
+  my $d		= $self->{env_proxy};
+  $self->{env_proxy} = shift if @_;
+  $d;
+}
+
 =item @channels = $feed->read_feed()
 
 This is the main workhorse method of the module. It tries to read and
@@ -118,6 +132,7 @@ sub read_feed {
   my $self = shift;
   my $url  = $self->url or return;
   my $ua = LWP::UserAgent->new;
+  $ua->env_proxy if $self->env_proxy;
   $ua->timeout($self->timeout);
   my $response = $ua->get($url,':content_cb' => sub { $self->parse($_[0]) } );
   $self->eof;

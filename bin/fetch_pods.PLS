@@ -114,6 +114,7 @@ for my $podcast (@sections) {
   my $genre             = $cfg->val($podcast=>'force_genre');
   my $artist            = $cfg->val($podcast=>'force_artist');
   my $album             = $cfg->val($podcast=>'force_album');
+  my $use_pub_date      = $cfg->val($podcast=>'use_pub_date');
 
   unless (defined $url) {
     warn "No podcast RSS URL defined for $podcast\n";
@@ -138,6 +139,7 @@ for my $podcast (@sections) {
                                  -keep_old          => $keep_old,
                                  -playlist_handle   => $m3ufile,
                                  -playlist_base     => $playlist_base,
+                                 -use_pub_date      => $use_pub_date,
                                 );
   $feed->fetch_pods;
   $fetched += $feed->fetched;
